@@ -1,0 +1,15 @@
+# robots.txt for Production-Ready Boilerplate
+
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /clients
+
+# Sitemap (update with your actual domain)
+# Sitemap: https://yourdomain.com/sitemap.xml
+

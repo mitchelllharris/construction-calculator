@@ -1,0 +1,37 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build Frontend
+        working-directory: ./vite-playground
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Production
+        # Add your deployment steps here
+        # Examples:
+        # - Deploy to Vercel: uses amondnet/vercel-action@v20
+        # - Deploy to AWS: uses aws-actions/configure-aws-credentials@v2
+        # - Deploy to your server: uses appleboy/ssh-action@master
+        run: |
+          echo "Add your deployment commands here"
+          # Example: rsync, scp, or deployment service commands
+

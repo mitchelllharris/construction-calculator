@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Frontend Tests and Lint
+  frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: vite-playground/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./vite-playground
+        run: npm ci
+
+      - name: Run linter
+        working-directory: ./vite-playground
+        run: npm run lint
+
+      - name: Run tests
+        working-directory: ./vite-playground
+        run: npm test -- --run
+
+      - name: Build
+        working-directory: ./vite-playground
+        run: npm run build
+
+  # Backend Tests and Lint
+  backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ./server
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://localhost:27017/test-db
+          JWT_SECRET: test-secret-key-for-ci-only-min-32-characters
+
