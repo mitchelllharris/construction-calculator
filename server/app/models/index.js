@@ -8,6 +8,7 @@ db.mongoose = mongoose;
 db.user = require('./user.model.js');
 db.role = require('./role.models.js');
 db.contactForm = require('./contactform.model.js');
+db.contact = require('./contact.model.js');
 
 db.ROLES = [
     'user',

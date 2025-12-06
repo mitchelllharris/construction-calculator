@@ -3,6 +3,7 @@ require('dotenv').config();
 
 // load the express package
 const express = require('express');
+const path = require('path');
 
 // load the CORS middleware package
 const cors = require('cors');
@@ -58,6 +59,9 @@ app.use(express.json({ limit: '5mb'}));
 // extended: true allows nested objects; false uses querystring library
 // SECURITY: Limit URL-encoded payload size to prevent DoS attacks
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const dbConfig = require('./app/config/db.config');
 const db = require('./app/models');
@@ -136,6 +140,7 @@ require('./app/routes/passwordReset.routes')(app);
 require('./app/routes/profile.routes')(app);
 require('./app/routes/admin.routes')(app);
 require('./app/routes/contactform.routes')(app);
+require('./app/routes/contact.routes')(app);
 
 // define a simple GET route on the root path
 app.get('/', (req, res) => {

@@ -36,7 +36,6 @@ function AppContent() {
         <Route path="/about" element={<About />}/>
         <Route path="/contact" element={<Contact />}/>
         <Route path="/pricing" element={<Pricing />}/>
-        <Route path="/contacts" element={<Contacts />}/>
         <Route path="/login" element={<Login />}/>
         <Route path="/register" element={<Register />}/>
           <Route path="/verify-email" element={<VerifyEmail />}/>
@@ -50,6 +49,14 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/contacts" 
+            element={
+              <ProtectedRoute>
+                <Contacts />
               </ProtectedRoute>
             }
           />

@@ -33,6 +33,17 @@ export const API_ENDPOINTS = {
     CONTACT_FORM: {
         SUBMIT: `${API_BASE_URL}/api/contact-form`,
     },
+  CONTACTS: {
+    GET_ALL: `${API_BASE_URL}/api/contacts`,
+    GET_BY_ID: (id) => `${API_BASE_URL}/api/contacts/${id}`,
+    CREATE: `${API_BASE_URL}/api/contacts`,
+    UPDATE: (id) => `${API_BASE_URL}/api/contacts/${id}`,
+    DELETE: (id) => `${API_BASE_URL}/api/contacts/${id}`,
+    UPLOAD_AVATAR: (id) => `${API_BASE_URL}/api/contacts/upload-avatar/${id}`,
+    IMPORT: `${API_BASE_URL}/api/contacts/import`,
+    EXPORT: `${API_BASE_URL}/api/contacts/export`,
+    BULK_DELETE: `${API_BASE_URL}/api/contacts/bulk-delete`,
+  },
   TEST: {
     ALL: `${API_BASE_URL}/api/test/all`,
     USER: `${API_BASE_URL}/api/test/user`,

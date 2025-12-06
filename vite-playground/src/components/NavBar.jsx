@@ -26,6 +26,7 @@ export default function NavBar() {
             {isAuthenticated && (
                 <div className="flex content-center gap-5">
                     <Link className='hover:opacity-60' to="/dashboard">Dashboard</Link>
+                    <Link className='hover:opacity-60' to="/contacts">Contacts</Link>
                     <Link className='hover:opacity-60' to="/clients">Clients</Link>
                     <Link className='hover:opacity-60' to="/settings">Settings</Link>
                 </div>
