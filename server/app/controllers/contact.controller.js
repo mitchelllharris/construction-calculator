@@ -1,6 +1,7 @@
 const db = require("../models");
 const mongoose = require('mongoose');
 const logger = require("../utils/logger");
+const { createPhoneSearchRegex, normalizePhone } = require("../utils/phoneSearch");
 const User = db.user;
 const Contact = db.contact;
 
@@ -56,12 +57,37 @@ exports.getAllContacts = async (req, res) => {
         }
         if (req.query.search) {
             const searchRegex = new RegExp(req.query.search, 'i');
-            query.$or = [
+            const searchOr = [
                 { firstName: searchRegex },
                 { lastName: searchRegex },
                 { email: searchRegex },
-                { phone: searchRegex }
+                { type: searchRegex }, // company/type
+                { city: searchRegex }, // suburb
+                { address: searchRegex }, // street
+                { state: searchRegex },
+                { country: searchRegex },
+                { tags: searchRegex } // search within tags array (matches any tag)
             ];
+            
+            // Enhanced phone number search - handles country code variations
+            // Check if search term contains digits (likely a phone number search)
+            const normalizedSearch = normalizePhone(req.query.search);
+            if (normalizedSearch && normalizedSearch.length >= 3) {
+                // Generate phone search patterns (handles +61 vs 0, etc.)
+                const phonePatterns = createPhoneSearchRegex(req.query.search);
+                if (phonePatterns.length > 0) {
+                    // Add all phone patterns to the $or array
+                    searchOr.push(...phonePatterns);
+                } else {
+                    // Fallback to simple phone regex if no patterns generated
+                    searchOr.push({ phone: searchRegex });
+                }
+            } else {
+                // For non-phone searches, use simple regex
+                searchOr.push({ phone: searchRegex });
+            }
+            
+            query.$or = searchOr;
         }
 
         // Get contacts with pagination

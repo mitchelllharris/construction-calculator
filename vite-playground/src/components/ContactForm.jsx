@@ -42,7 +42,12 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
   useEffect(() => {
     if (contact) {
       Object.keys(initialValues).forEach((key) => {
-        setValue(key, contact[key] || '');
+        // Handle tags specially - convert array to comma-separated string
+        if (key === 'tags') {
+          setValue(key, contact.tags && Array.isArray(contact.tags) ? contact.tags.join(', ') : '');
+        } else {
+          setValue(key, contact[key] || '');
+        }
       });
       // Set avatar preview if contact has avatar
       if (contact.avatar) {
@@ -176,9 +181,9 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
       zip: values.zip?.trim() || undefined,
       country: values.country?.trim() || undefined,
       notes: values.notes?.trim() || undefined,
-      tags: values.tags?.trim() 
+      tags: (typeof values.tags === 'string' && values.tags.trim()) 
         ? values.tags.split(',').map(t => t.trim()).filter(Boolean)
-        : [],
+        : (Array.isArray(values.tags) ? values.tags : []),
     };
 
     // Remove undefined values

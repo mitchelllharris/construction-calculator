@@ -4,13 +4,14 @@ import { useToast } from '../contexts/ToastContext';
 import ContactCard from './ContactCard';
 import SkeletonCard from './SkeletonCard';
 import Input from './Input';
-import { MdSearch, MdFilterList, MdChevronLeft, MdChevronRight } from 'react-icons/md';
+import { MdSearch, MdFilterList, MdChevronLeft, MdChevronRight, MdRefresh } from 'react-icons/md';
 
 export default function ContactList({ onEdit, onView, onRefresh, onSelectedContactsChange }) {
   const { showSuccess, showError } = useToast();
   const [contacts, setContacts] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [pageSize, setPageSize] = useState(20);
@@ -18,9 +19,18 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const prevRefreshRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+  const isInitialLoad = useRef(true);
 
-  const fetchContacts = React.useCallback(async (page = pagination.page, limit = pageSize) => {
-    setLoading(true);
+  const fetchContacts = React.useCallback(async (page = pagination.page, limit = pageSize, isSearch = false) => {
+    // Only show skeleton loader on initial load
+    if (isInitialLoad.current) {
+      setLoading(true);
+    } else if (isSearch) {
+      // Show subtle loading indicator during search
+      setSearching(true);
+    }
+    // For other cases (page changes, page size changes), no loading indicator
+    
     try {
       const params = {
         page,
@@ -33,10 +43,12 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
       setPagination(response.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
       const newSet = new Set();
       setSelectedContacts(newSet); // Clear selection on new page
+      isInitialLoad.current = false;
     } catch (error) {
       showError(error.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
+      setSearching(false);
     }
   }, [searchTerm, typeFilter, pageSize, pagination.page, showError]);
 
@@ -47,9 +59,21 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
     }
   }, [selectedContacts, onSelectedContactsChange]);
 
+  // Initial load
   useEffect(() => {
-    fetchContacts(1, pageSize);
-  }, [pageSize, fetchContacts]);
+    if (isInitialLoad.current) {
+      fetchContacts(1, pageSize, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
+  // Handle page size changes (after initial load)
+  useEffect(() => {
+    if (!isInitialLoad.current) {
+      fetchContacts(1, pageSize, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize]);
 
   // Refresh when onRefresh changes (triggered from parent)
   useEffect(() => {
@@ -63,11 +87,16 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
 
   // Debounced search
   useEffect(() => {
+    // Skip debounce on initial mount
+    if (isInitialLoad.current) {
+      return;
+    }
+    
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
     searchTimeoutRef.current = setTimeout(() => {
-      fetchContacts(1, pageSize);
+      fetchContacts(1, pageSize, true);
     }, 500);
 
     return () => {
@@ -147,10 +176,15 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Search Contacts
+              {searching && (
+                <span className="ml-2 inline-flex items-center text-blue-500">
+                  <MdRefresh className="animate-spin" size={16} />
+                </span>
+              )}
             </label>
             <Input
               type="text"
-              placeholder="Search by name, email, or phone..."
+              placeholder="Search by name, email, phone, company, tags, suburb, street, state, country..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               icon={MdSearch}
