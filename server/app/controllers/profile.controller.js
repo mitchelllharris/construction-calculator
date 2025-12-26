@@ -1,5 +1,6 @@
 const db = require("../models");
 const User = db.user;
+const Contact = db.contact;
 const bcrypt = require("bcryptjs");
 const { generateToken, sendVerificationEmail } = require("../services/email.service");
 const logger = require("../utils/logger");
@@ -26,6 +27,21 @@ exports.getProfile = async (req, res) => {
             firstName: user.firstName || "",
             lastName: user.lastName || "",
             avatar: user.avatar || "",
+            trade: user.trade || "",
+            businessName: user.businessName || "",
+            bio: user.bio || "",
+            phone: user.phone || "",
+            website: user.website || "",
+            location: user.location || {},
+            yearsOfExperience: user.yearsOfExperience || null,
+            skills: user.skills || [],
+            certifications: user.certifications || [],
+            portfolio: user.portfolio || [],
+            serviceAreas: user.serviceAreas || [],
+            licenseNumbers: user.licenseNumbers || [],
+            socialMedia: user.socialMedia || {},
+            emailPrivacy: user.emailPrivacy || 'private',
+            privacySettings: user.privacySettings || {},
             roles: authorities,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
@@ -48,7 +64,12 @@ exports.updateProfile = async (req, res) => {
             return res.status(404).send({ message: "User not found" });
         }
 
-        const { username, email, firstName, lastName } = req.body;
+        const { 
+            username, email, firstName, lastName, 
+            trade, businessName, bio, phone, website,
+            location, yearsOfExperience, experience, skills, certifications,
+            portfolio, serviceAreas, licenseNumbers, socialMedia
+        } = req.body;
         const updates = {};
 
         // Update username if provided and different
@@ -88,21 +109,79 @@ exports.updateProfile = async (req, res) => {
             }
         }
 
-        // Update required fields - firstName and lastName are required
-        if ('firstName' in req.body) {
+        // Update firstName and lastName if provided
+        if (req.body.hasOwnProperty('firstName')) {
             const trimmedFirstName = firstName ? firstName.trim() : '';
-            if (!trimmedFirstName) {
-                return res.status(400).send({ message: "First name is required" });
-            }
-            updates.firstName = trimmedFirstName;
+            updates.firstName = trimmedFirstName || user.firstName || '';
         }
-        if ('lastName' in req.body) {
+        if (req.body.hasOwnProperty('lastName')) {
             const trimmedLastName = lastName ? lastName.trim() : '';
-            if (!trimmedLastName) {
-                return res.status(400).send({ message: "Last name is required" });
-            }
-            updates.lastName = trimmedLastName;
+            updates.lastName = trimmedLastName || user.lastName || '';
         }
+
+        // Update email privacy setting
+        if (req.body.hasOwnProperty('emailPrivacy')) {
+            const validPrivacyOptions = ['public', 'contacts_of_contacts', 'contacts_only', 'private'];
+            if (validPrivacyOptions.includes(req.body.emailPrivacy)) {
+                updates.emailPrivacy = req.body.emailPrivacy;
+            }
+        }
+
+        // Update privacy settings
+        if (req.body.hasOwnProperty('privacySettings') && typeof req.body.privacySettings === 'object') {
+            const validPrivacyOptions = ['public', 'contacts_of_contacts', 'contacts_only', 'private'];
+            const privacyFields = ['phone', 'website', 'bio', 'experience', 'skills', 'certifications', 
+                'portfolio', 'serviceAreas', 'licenseNumbers', 'location', 'socialMedia', 'trade', 
+                'businessName', 'yearsOfExperience'];
+            
+            if (!updates.privacySettings) {
+                updates.privacySettings = user.privacySettings || {};
+            }
+            
+            privacyFields.forEach(field => {
+                if (req.body.privacySettings.hasOwnProperty(field) && 
+                    validPrivacyOptions.includes(req.body.privacySettings[field])) {
+                    updates.privacySettings[field] = req.body.privacySettings[field];
+                }
+            });
+        }
+
+        // Update tradie-specific fields - always update if field is present in request
+        if (req.body.hasOwnProperty('trade')) updates.trade = trade ? trade.trim() : null;
+        if (req.body.hasOwnProperty('businessName')) updates.businessName = businessName ? businessName.trim() : null;
+        if (req.body.hasOwnProperty('bio')) {
+            // Remove links from bio - only allow text and emojis
+            let cleanedBio = bio ? bio.trim() : null;
+            if (cleanedBio) {
+                // Remove URLs (http://, https://, www., emails)
+                cleanedBio = cleanedBio
+                    .replace(/https?:\/\/[^\s]+/gi, '')
+                    .replace(/www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*/gi, '')
+                    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+            updates.bio = cleanedBio || null;
+        }
+        if (req.body.hasOwnProperty('phone')) updates.phone = phone ? phone.trim() : null;
+        if (req.body.hasOwnProperty('website')) updates.website = website ? website.trim() : null;
+        if (req.body.hasOwnProperty('location')) updates.location = location || {};
+        if (req.body.hasOwnProperty('yearsOfExperience')) updates.yearsOfExperience = yearsOfExperience || null;
+        if (req.body.hasOwnProperty('experience')) updates.experience = Array.isArray(experience) ? experience : [];
+        if (req.body.hasOwnProperty('skills')) updates.skills = Array.isArray(skills) ? skills : [];
+        if (req.body.hasOwnProperty('certifications')) {
+            // Normalize certifications - ensure both expirationDate and expiryDate are set
+            const normalizedCerts = Array.isArray(certifications) ? certifications.map(cert => ({
+                ...cert,
+                expiryDate: cert.expiryDate || cert.expirationDate || null,
+                expirationDate: cert.expirationDate || cert.expiryDate || null,
+            })) : [];
+            updates.certifications = normalizedCerts;
+        }
+        if (req.body.hasOwnProperty('portfolio')) updates.portfolio = Array.isArray(portfolio) ? portfolio : [];
+        if (req.body.hasOwnProperty('serviceAreas')) updates.serviceAreas = Array.isArray(serviceAreas) ? serviceAreas : [];
+        if (req.body.hasOwnProperty('licenseNumbers')) updates.licenseNumbers = Array.isArray(licenseNumbers) ? licenseNumbers : [];
+        if (req.body.hasOwnProperty('socialMedia')) updates.socialMedia = socialMedia || {};
 
         // Apply updates
         Object.assign(user, updates);
@@ -125,12 +204,28 @@ exports.updateProfile = async (req, res) => {
                 firstName: updatedUser.firstName || "",
                 lastName: updatedUser.lastName || "",
                 avatar: updatedUser.avatar || "",
+                trade: updatedUser.trade || "",
+                businessName: updatedUser.businessName || "",
+                bio: updatedUser.bio || "",
+                phone: updatedUser.phone || "",
+                website: updatedUser.website || "",
+                location: updatedUser.location || {},
+                yearsOfExperience: updatedUser.yearsOfExperience || null,
+                experience: updatedUser.experience || [],
+                skills: updatedUser.skills || [],
+                certifications: updatedUser.certifications || [],
+                portfolio: updatedUser.portfolio || [],
+                serviceAreas: updatedUser.serviceAreas || [],
+                licenseNumbers: updatedUser.licenseNumbers || [],
+            socialMedia: updatedUser.socialMedia || {},
+                emailPrivacy: updatedUser.emailPrivacy || 'private',
+                privacySettings: updatedUser.privacySettings || {},
                 roles: authorities,
                 createdAt: updatedUser.createdAt,
                 updatedAt: updatedUser.updatedAt
-            }
-        });
-    } catch (err) {
+        }
+    });
+} catch (err) {
         logger.error("Update profile error:", err);
         const isDevelopment = process.env.NODE_ENV !== 'production';
         return res.status(500).send({ 
@@ -187,6 +282,257 @@ exports.changePassword = async (req, res) => {
         const isDevelopment = process.env.NODE_ENV !== 'production';
         return res.status(500).send({ 
             message: isDevelopment ? (err.message || "Failed to change password.") : "Failed to change password. Please try again." 
+        });
+    }
+};
+
+// Helper function to check if a field should be visible based on privacy settings
+const checkPrivacy = async (privacySetting, viewerUserId, profileOwnerId, profileOwnerEmail) => {
+    if (!privacySetting || privacySetting === 'public') {
+        return true;
+    }
+    
+    if (privacySetting === 'private') {
+        return false;
+    }
+    
+    // Owner can always see their own data
+    if (viewerUserId && viewerUserId === profileOwnerId.toString()) {
+        return true;
+    }
+    
+    if (!viewerUserId) {
+        return false; // Not authenticated
+    }
+    
+    // Check if viewer is in profile owner's contacts
+    const viewer = await User.findById(viewerUserId).select('email');
+    if (!viewer || !viewer.email) {
+        return false;
+    }
+    
+    const contact = await Contact.findOne({
+        user: profileOwnerId,
+        email: viewer.email.toLowerCase()
+    });
+    
+    if (privacySetting === 'contacts_only') {
+        return !!contact;
+    }
+    
+    if (privacySetting === 'contacts_of_contacts') {
+        // For now, same as contacts_only. Can be enhanced later
+        return !!contact;
+    }
+    
+    return false;
+};
+
+// Get public profile by username or ID (authentication optional for privacy checks)
+exports.getPublicProfile = async (req, res) => {
+    try {
+        const { username, id } = req.params;
+        const viewerUserId = req.userId || null; // May be null if not authenticated
+        let user;
+
+        if (id) {
+            user = await User.findById(id)
+                .select("-password -verificationToken -resetPasswordToken -loginAttempts -lockUntil -tokenVersion");
+        } else if (username) {
+            user = await User.findOne({ username: username })
+                .select("-password -verificationToken -resetPasswordToken -loginAttempts -lockUntil -tokenVersion");
+        } else {
+            return res.status(400).send({ message: "Username or ID is required" });
+        }
+
+        if (!user) {
+            return res.status(404).send({ message: "User not found" });
+        }
+
+        const privacySettings = user.privacySettings || {};
+        
+        // Check privacy for each field
+        const showEmail = await checkPrivacy(user.emailPrivacy || 'private', viewerUserId, user._id, user.email);
+        const showPhone = await checkPrivacy(privacySettings.phone || 'private', viewerUserId, user._id, user.email);
+        const showWebsite = await checkPrivacy(privacySettings.website || 'private', viewerUserId, user._id, user.email);
+        const showBio = await checkPrivacy(privacySettings.bio || 'public', viewerUserId, user._id, user.email);
+        const showExperience = await checkPrivacy(privacySettings.experience || 'public', viewerUserId, user._id, user.email);
+        const showSkills = await checkPrivacy(privacySettings.skills || 'public', viewerUserId, user._id, user.email);
+        const showCertifications = await checkPrivacy(privacySettings.certifications || 'public', viewerUserId, user._id, user.email);
+        const showPortfolio = await checkPrivacy(privacySettings.portfolio || 'public', viewerUserId, user._id, user.email);
+        const showServiceAreas = await checkPrivacy(privacySettings.serviceAreas || 'public', viewerUserId, user._id, user.email);
+        const showLicenseNumbers = await checkPrivacy(privacySettings.licenseNumbers || 'public', viewerUserId, user._id, user.email);
+        const showLocation = await checkPrivacy(privacySettings.location || 'public', viewerUserId, user._id, user.email);
+        const showSocialMedia = await checkPrivacy(privacySettings.socialMedia || 'public', viewerUserId, user._id, user.email);
+        const showTrade = await checkPrivacy(privacySettings.trade || 'public', viewerUserId, user._id, user.email);
+        const showBusinessName = await checkPrivacy(privacySettings.businessName || 'public', viewerUserId, user._id, user.email);
+        const showYearsOfExperience = await checkPrivacy(privacySettings.yearsOfExperience || 'public', viewerUserId, user._id, user.email);
+
+        const response = {
+            id: user._id,
+            username: user.username,
+            firstName: user.firstName || "",
+            lastName: user.lastName || "",
+            avatar: user.avatar || "",
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        };
+
+        // Only include fields if privacy settings allow it
+        if (showEmail && user.email) {
+            response.email = user.email;
+        }
+        if (showPhone && user.phone) {
+            response.phone = user.phone;
+        }
+        if (showWebsite && user.website) {
+            response.website = user.website;
+        }
+        if (showBio && user.bio) {
+            response.bio = user.bio;
+        }
+        if (showExperience && user.experience) {
+            response.experience = user.experience;
+        }
+        if (showSkills && user.skills) {
+            response.skills = user.skills;
+        }
+        if (showCertifications && user.certifications) {
+            response.certifications = user.certifications;
+        }
+        if (showPortfolio && user.portfolio) {
+            response.portfolio = user.portfolio;
+        }
+        if (showServiceAreas && user.serviceAreas) {
+            response.serviceAreas = user.serviceAreas;
+        }
+        if (showLicenseNumbers && user.licenseNumbers) {
+            response.licenseNumbers = user.licenseNumbers;
+        }
+        if (showLocation && user.location) {
+            response.location = user.location;
+        }
+        if (showSocialMedia && user.socialMedia) {
+            response.socialMedia = user.socialMedia;
+        }
+        if (showTrade && user.trade) {
+            response.trade = user.trade;
+        }
+        if (showBusinessName && user.businessName) {
+            response.businessName = user.businessName;
+        }
+        if (showYearsOfExperience && user.yearsOfExperience !== undefined && user.yearsOfExperience !== null) {
+            response.yearsOfExperience = user.yearsOfExperience;
+        }
+
+        return res.status(200).json(response);
+    } catch (err) {
+        logger.error("Get public profile error:", err);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({ 
+            message: isDevelopment ? (err.message || "Failed to get profile.") : "Failed to get profile. Please try again." 
+        });
+    }
+};
+
+// Upload user avatar
+exports.uploadAvatar = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send({ message: "Avatar image is required" });
+        }
+
+        const user = await User.findById(req.userId);
+        if (!user) {
+            // Delete uploaded file if user not found
+            const fs = require('fs');
+            if (req.file.path) {
+                fs.unlinkSync(req.file.path);
+            }
+            return res.status(404).send({ message: "User not found" });
+        }
+
+        // Delete old avatar if exists
+        if (user.avatar) {
+            const fs = require('fs');
+            const path = require('path');
+            const oldAvatarPath = path.join(__dirname, '../../', user.avatar);
+            if (fs.existsSync(oldAvatarPath)) {
+                try {
+                    fs.unlinkSync(oldAvatarPath);
+                } catch (err) {
+                    logger.warn("Could not delete old avatar:", err);
+                }
+            }
+        }
+
+        // Update user with new avatar path
+        // Store relative path from server root: /uploads/avatars/filename
+        const avatarPath = `/uploads/avatars/${req.file.filename}`;
+        user.avatar = avatarPath;
+        await user.save();
+
+        return res.status(200).send({
+            message: "Avatar uploaded successfully",
+            avatar: avatarPath,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                avatar: avatarPath
+            }
+        });
+    } catch (error) {
+        logger.error("Error uploading avatar:", error);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({ 
+            message: isDevelopment ? (error.message || "Failed to upload avatar.") : "Failed to upload avatar. Please try again." 
+        });
+    }
+};
+
+// Upload portfolio image
+exports.uploadPortfolioImage = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send({ message: "Image file is required" });
+        }
+
+        // Store relative path from server root: /uploads/portfolio/filename
+        const imagePath = `/uploads/portfolio/${req.file.filename}`;
+
+        return res.status(200).send({
+            message: "Image uploaded successfully",
+            imageUrl: imagePath,
+        });
+    } catch (error) {
+        logger.error("Error uploading portfolio image:", error);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({ 
+            message: isDevelopment ? (error.message || "Failed to upload image.") : "Failed to upload image. Please try again." 
+        });
+    }
+};
+
+// Upload certification PDF
+exports.uploadCertificationPDF = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send({ message: "PDF file is required" });
+        }
+
+        // Store relative path from server root: /uploads/certifications/filename
+        const pdfPath = `/uploads/certifications/${req.file.filename}`;
+
+        return res.status(200).send({
+            message: "PDF uploaded successfully",
+            pdfUrl: pdfPath,
+        });
+    } catch (error) {
+        logger.error("Error uploading certification PDF:", error);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({ 
+            message: isDevelopment ? (error.message || "Failed to upload PDF.") : "Failed to upload PDF. Please try again." 
         });
     }
 };

@@ -26,6 +26,40 @@ const avatarStorage = multer.diskStorage({
     }
 });
 
+// Configure storage for portfolio images
+const portfolioStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const portfolioDir = path.join(uploadsDir, 'portfolio');
+        if (!fs.existsSync(portfolioDir)) {
+            fs.mkdirSync(portfolioDir, { recursive: true });
+        }
+        cb(null, portfolioDir);
+    },
+    filename: (req, file, cb) => {
+        // Generate unique filename: userId-timestamp-originalname
+        const uniqueSuffix = `${req.userId}-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `portfolio-${uniqueSuffix}${ext}`);
+    }
+});
+
+// Configure storage for certification PDFs
+const certificationStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const certificationDir = path.join(uploadsDir, 'certifications');
+        if (!fs.existsSync(certificationDir)) {
+            fs.mkdirSync(certificationDir, { recursive: true });
+        }
+        cb(null, certificationDir);
+    },
+    filename: (req, file, cb) => {
+        // Generate unique filename: userId-timestamp-originalname
+        const uniqueSuffix = `${req.userId}-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `cert-${uniqueSuffix}${ext}`);
+    }
+});
+
 // Configure storage for CSV files (memory storage for parsing)
 const csvStorage = multer.memoryStorage();
 
@@ -42,6 +76,19 @@ const imageFilter = (req, file, cb) => {
         }
     } else {
         cb(new Error('File must be an image'), false);
+    }
+};
+
+// File filter for PDFs
+const pdfFilter = (req, file, cb) => {
+    // Accept PDF files by extension or MIME type
+    const isPDF = file.originalname.toLowerCase().endsWith('.pdf') ||
+                  file.mimetype === 'application/pdf';
+    
+    if (isPDF) {
+        cb(null, true);
+    } else {
+        cb(new Error('File must be a PDF file (.pdf extension)'), false);
     }
 };
 
@@ -72,6 +119,24 @@ const uploadAvatar = multer({
     }
 }).single('avatar');
 
+// Portfolio image upload middleware
+const uploadPortfolioImage = multer({
+    storage: portfolioStorage,
+    fileFilter: imageFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit for portfolio images
+    }
+}).single('image');
+
+// Certification PDF upload middleware
+const uploadCertificationPDF = multer({
+    storage: certificationStorage,
+    fileFilter: pdfFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit for PDFs
+    }
+}).single('pdf');
+
 // CSV upload middleware
 const uploadCSV = multer({
     storage: csvStorage,
@@ -100,6 +165,8 @@ const handleUploadError = (uploadMiddleware) => {
 
 module.exports = {
     uploadAvatar: handleUploadError(uploadAvatar),
+    uploadPortfolioImage: handleUploadError(uploadPortfolioImage),
+    uploadCertificationPDF: handleUploadError(uploadCertificationPDF),
     uploadCSV: handleUploadError(uploadCSV)
 };
 

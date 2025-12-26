@@ -112,6 +112,7 @@ export default function ContactCard({ contact, onEdit, onDelete, onView, isSelec
             <MdEmail className="text-gray-400" size={18} />
             <a
               href={`mailto:${contact.email}`}
+              onClick={(e) => e.stopPropagation()}
               className="hover:text-blue-600 transition-colors"
             >
               {contact.email}
@@ -124,6 +125,7 @@ export default function ContactCard({ contact, onEdit, onDelete, onView, isSelec
             <MdPhone className="text-gray-400" size={18} />
             <a
               href={`tel:${contact.phone}`}
+              onClick={(e) => e.stopPropagation()}
               className="hover:text-blue-600 transition-colors"
             >
               {contact.phone}

@@ -1,15 +1,48 @@
 import { Link, useNavigate } from 'react-router-dom';
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { MdPerson, MdSettings, MdLogout, MdArrowDropDown } from 'react-icons/md';
 
 export default function NavBar() {
     const { isAuthenticated, logout, user } = useAuth();
     const navigate = useNavigate();
+    const [showDropdown, setShowDropdown] = useState(false);
+    const dropdownRef = useRef(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setShowDropdown(false);
+            }
+        };
+
+        if (showDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showDropdown]);
 
     const handleLogout = (e) => {
         e.preventDefault();
         logout();
         navigate('/login');
+        setShowDropdown(false);
+    };
+
+    const handleProfileClick = () => {
+        if (user?.username) {
+            navigate(`/profile/${user.username}`);
+        }
+        setShowDropdown(false);
+    };
+
+    const handleSettingsClick = () => {
+        navigate('/settings');
+        setShowDropdown(false);
     };
 
     return (
@@ -41,16 +74,45 @@ export default function NavBar() {
                 {isAuthenticated && (
                     <>
                         {user && (
-                            <span className='text-sm text-gray-600'>
-                                {user.username}
-                            </span>
+                            <div className="relative" ref={dropdownRef}>
+                                <button
+                                    onClick={() => setShowDropdown(!showDropdown)}
+                                    className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 px-3 py-2 rounded hover:bg-gray-100 transition-colors"
+                                >
+                                    <span>{user.username}</span>
+                                    <MdArrowDropDown size={20} className={showDropdown ? 'transform rotate-180' : ''} />
+                                </button>
+                                
+                                {showDropdown && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                                        <div className="py-1">
+                                            <button
+                                                onClick={handleProfileClick}
+                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                            >
+                                                <MdPerson size={18} />
+                                                My Profile
+                                            </button>
+                                            <button
+                                                onClick={handleSettingsClick}
+                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                            >
+                                                <MdSettings size={18} />
+                                                Settings
+                                            </button>
+                                            <div className="border-t border-gray-200 my-1"></div>
+                                            <button
+                                                onClick={handleLogout}
+                                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                            >
+                                                <MdLogout size={18} />
+                                                Logout
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
-                        <button 
-                            onClick={handleLogout} 
-                            className="bg-blue-500 cursor-pointer font-medium rounded-sm text-white px-4 py-2 hover:bg-blue-700"
-                        >
-                            Logout
-                        </button>
                     </>
                 )}
             </div>

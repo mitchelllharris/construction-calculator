@@ -9,6 +9,7 @@ db.user = require('./user.model.js');
 db.role = require('./role.models.js');
 db.contactForm = require('./contactform.model.js');
 db.contact = require('./contact.model.js');
+db.interaction = require('./interaction.model.js');
 
 db.ROLES = [
     'user',

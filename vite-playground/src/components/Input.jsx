@@ -43,7 +43,7 @@ export default function Input({
           className={`w-full ${paddingClass} ${className} outline-none bg-transparent`}
           type={type}
           placeholder={placeholder}
-          value={value}
+          value={value ?? ''}
           onChange={onChange}
           {...restProps}
         />

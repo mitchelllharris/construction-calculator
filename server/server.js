@@ -27,10 +27,11 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'"],
-            imgSrc: ["'self'", "data:", "https:"],
+            imgSrc: ["'self'", "data:", "https:", "http://localhost:8080"],
         },
     },
     crossOriginEmbedderPolicy: false, // Allow embedding if needed
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin resources
 }));
 
 // configure CORS options (which origins are allowed)
@@ -60,8 +61,12 @@ app.use(express.json({ limit: '5mb'}));
 // SECURITY: Limit URL-encoded payload size to prevent DoS attacks
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve static files from uploads directory with CORS headers
+app.use('/uploads', cors(corsOptions), (req, res, next) => {
+    // Set Cross-Origin-Resource-Policy header to allow cross-origin access
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 const dbConfig = require('./app/config/db.config');
 const db = require('./app/models');
@@ -141,6 +146,7 @@ require('./app/routes/profile.routes')(app);
 require('./app/routes/admin.routes')(app);
 require('./app/routes/contactform.routes')(app);
 require('./app/routes/contact.routes')(app);
+require('./app/routes/interaction.routes')(app);
 
 // define a simple GET route on the root path
 app.get('/', (req, res) => {

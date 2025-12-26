@@ -56,7 +56,9 @@ exports.getAllContacts = async (req, res) => {
             query.status = req.query.status;
         }
         if (req.query.search) {
-            const searchRegex = new RegExp(req.query.search, 'i');
+            // Escape special regex characters to prevent errors
+            const escapedSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(escapedSearch, 'i');
             const searchOr = [
                 { firstName: searchRegex },
                 { lastName: searchRegex },
@@ -72,7 +74,11 @@ exports.getAllContacts = async (req, res) => {
             // Enhanced phone number search - handles country code variations
             // Check if search term contains digits (likely a phone number search)
             const normalizedSearch = normalizePhone(req.query.search);
-            if (normalizedSearch && normalizedSearch.length >= 3) {
+            // Allow phone search for 2+ digits (to handle country codes like "61")
+            // Also check if search term looks like a phone number (contains digits)
+            const isPhoneSearch = normalizedSearch && normalizedSearch.length >= 2 && /^\D*\d/.test(req.query.search);
+            
+            if (isPhoneSearch) {
                 // Generate phone search patterns (handles +61 vs 0, etc.)
                 const phonePatterns = createPhoneSearchRegex(req.query.search);
                 if (phonePatterns.length > 0) {
@@ -83,7 +89,7 @@ exports.getAllContacts = async (req, res) => {
                     searchOr.push({ phone: searchRegex });
                 }
             } else {
-                // For non-phone searches, use simple regex
+                // For non-phone searches, use escaped regex
                 searchOr.push({ phone: searchRegex });
             }
             

@@ -1,7 +1,10 @@
 import React from 'react';
-import { MdClose, MdEdit, MdDelete, MdEmail, MdPhone, MdLocationOn, MdBusiness, MdNotes, MdTag } from 'react-icons/md';
+import { useNavigate } from 'react-router-dom';
+import { MdClose, MdEdit, MdDelete, MdEmail, MdPhone, MdLocationOn, MdBusiness, MdNotes, MdTag, MdVisibility } from 'react-icons/md';
 
 export default function ContactDetailModal({ contact, onClose, onEdit, onDelete }) {
+  const navigate = useNavigate();
+  
   if (!contact) return null;
 
   const getTypeColor = (type) => {
@@ -177,35 +180,47 @@ export default function ContactDetailModal({ contact, onClose, onEdit, onDelete 
         </div>
 
         {/* Footer Actions */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-between items-center">
           <button
             onClick={() => {
-              onEdit(contact);
+              navigate(`/contacts/${contact._id}`);
               onClose();
             }}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors flex items-center gap-2"
           >
-            <MdEdit size={18} />
-            Edit
+            <MdVisibility size={18} />
+            View Full Profile
           </button>
-          <button
-            onClick={() => {
-              if (window.confirm(`Are you sure you want to delete ${contact.firstName} ${contact.lastName}?`)) {
-                onDelete(contact);
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                onEdit(contact);
                 onClose();
-              }
-            }}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors flex items-center gap-2"
-          >
-            <MdDelete size={18} />
-            Delete
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-          >
-            Close
-          </button>
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
+            >
+              <MdEdit size={18} />
+              Edit
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm(`Are you sure you want to delete ${contact.firstName} ${contact.lastName}?`)) {
+                  onDelete(contact);
+                  onClose();
+                }
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors flex items-center gap-2"
+            >
+              <MdDelete size={18} />
+              Delete
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

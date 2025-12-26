@@ -34,14 +34,20 @@ function generatePhoneSearchPatterns(searchTerm) {
     // If search starts with a country code, create local format pattern
     for (const [code, localPrefix] of Object.entries(countryCodes)) {
         if (normalized.startsWith(code)) {
-            // Replace country code with local prefix
-            const localFormat = localPrefix + normalized.substring(code.length);
-            patterns.push(localFormat);
-            
-            // Also add pattern without country code
-            const withoutCode = normalized.substring(code.length);
-            if (withoutCode) {
-                patterns.push(withoutCode);
+            // If search is exactly the country code (e.g., "61"), also add local prefix
+            // so it matches all numbers from that country (e.g., numbers starting with "0")
+            if (normalized === code) {
+                patterns.push(localPrefix);
+            } else {
+                // Replace country code with local prefix
+                const localFormat = localPrefix + normalized.substring(code.length);
+                patterns.push(localFormat);
+                
+                // Also add pattern without country code
+                const withoutCode = normalized.substring(code.length);
+                if (withoutCode) {
+                    patterns.push(withoutCode);
+                }
             }
         }
         
@@ -56,6 +62,12 @@ function generatePhoneSearchPatterns(searchTerm) {
                 patterns.push(withoutLocalPrefix);
             }
         }
+        
+        // If search is exactly the local prefix (e.g., "0"), also add country code
+        // so it matches all numbers from that country (e.g., numbers starting with "61")
+        if (normalized === localPrefix) {
+            patterns.push(code);
+        }
     }
     
     // Remove duplicates and empty strings
@@ -64,7 +76,7 @@ function generatePhoneSearchPatterns(searchTerm) {
 
 /**
  * Creates MongoDB regex patterns for phone number search
- * Matches digit sequences while ignoring non-digit characters (+, spaces, dashes, etc.)
+ * Matches digit sequences from the start while ignoring non-digit characters (+, spaces, dashes, etc.)
  * @param {string} searchTerm - The search term
  * @returns {Array} - Array of regex objects for $or query
  */
@@ -72,22 +84,16 @@ function createPhoneSearchRegex(searchTerm) {
     const patterns = generatePhoneSearchPatterns(searchTerm);
     if (patterns.length === 0) return [];
     
-    // Create regex patterns that match the digit sequence
-    // The regex allows any non-digit characters between digits
-    // Example: pattern "450413547" matches "+61 450 413 547" or "0450413547"
+    // Create regex patterns that match the digit sequence from the start
+    // The regex allows optional non-digit characters at the start (for +) and between digits
+    // Example: pattern "61423" matches "+61 423" or "061423" from the start
     return patterns.map(pattern => {
-        // Build regex that matches the digit sequence, allowing non-digits anywhere
-        // First digit can have optional non-digits before it
-        // Each subsequent digit can have optional non-digits before it
-        const regexPattern = pattern.split('').map((digit, index) => {
-            if (index === 0) {
-                // First digit: allow optional non-digits before it
-                return '\\D*' + digit;
-            } else {
-                // Subsequent digits: require at least one non-digit or the digit itself
-                // This ensures digits appear in sequence
-                return '\\D*' + digit;
-            }
+        // Build regex that matches the pattern from the start of the phone number
+        // Allow optional + and non-digits at the very beginning, then match the digit sequence
+        // Anchor to start: ^ allows optional + and non-digits, then requires the pattern
+        const regexPattern = '^\\D*' + pattern.split('').map((digit) => {
+            // Each digit can have optional non-digits before it
+            return '\\D*' + digit;
         }).join('') + '\\D*';
         
         return {

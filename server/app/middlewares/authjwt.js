@@ -40,6 +40,49 @@ verifyToken = async (req, res, next) => {
     });
 };
 
+// Optional token verification - doesn't fail if no token provided
+verifyTokenOptional = async (req, res, next) => {
+    let token = req.headers['x-access-token'];
+
+    if (!token) {
+        // No token provided, continue without setting userId
+        req.userId = null;
+        return next();
+    }
+
+    // SECURITY: Explicitly specify algorithm to prevent algorithm confusion attacks
+    jwt.verify(token, config.secret, { algorithms: ['HS256'] }, async (err, decoded) => {
+        if (err) {
+            // Invalid token, continue without setting userId
+            req.userId = null;
+            return next();
+        }
+        
+        // SECURITY: Verify token version to invalidate tokens after password change
+        try {
+            const user = await User.findById(decoded.id).select('tokenVersion');
+            if (!user) {
+                req.userId = null;
+                return next();
+            }
+            
+            // Check if token version matches (prevents use of old tokens after password change)
+            const tokenVersion = decoded.tokenVersion || 0;
+            if (user.tokenVersion !== tokenVersion) {
+                req.userId = null;
+                return next();
+            }
+            
+            req.userId = decoded.id;
+            next();
+        } catch (dbErr) {
+            logger.error('Token verification error:', dbErr);
+            req.userId = null;
+            return next();
+        }
+    });
+};
+
 isAdmin = async (req, res, next) => {
     try {
         // SECURITY: Sanitize userId to prevent NoSQL injection
@@ -112,6 +155,7 @@ isModerator = async (req, res, next) => {
 
 const authJwt = {
     verifyToken: verifyToken,
+    verifyTokenOptional: verifyTokenOptional,
     isAdmin: isAdmin,
     isModerator: isModerator
 };

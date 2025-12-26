@@ -30,6 +30,20 @@ const validateSignup = [
         .withMessage('Password must be at least 8 characters long')
         .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/)
         .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)'),
+    
+    body('firstName')
+        .notEmpty()
+        .withMessage('First name is required')
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage('First name must be between 1 and 50 characters'),
+    
+    body('lastName')
+        .notEmpty()
+        .withMessage('Last name is required')
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage('Last name must be between 1 and 50 characters'),
 ];
 
 // Validation rules for signin

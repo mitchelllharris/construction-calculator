@@ -24,6 +24,8 @@ export default function Register() {
         {
             username: '',
             email: '',
+            firstName: '',
+            lastName: '',
             password: '',
             confirmPassword: '',
         },
@@ -60,6 +62,14 @@ export default function Register() {
             case 'confirmPassword':
                 if (!value) return 'Please confirm your password';
                 if (value !== formData.password) return 'Passwords do not match';
+                return null;
+            case 'firstName':
+                if (!value || !value.trim()) return 'First name is required';
+                if (value.trim().length > 50) return 'First name must be less than 50 characters';
+                return null;
+            case 'lastName':
+                if (!value || !value.trim()) return 'Last name is required';
+                if (value.trim().length > 50) return 'Last name must be less than 50 characters';
                 return null;
             default:
                 return null;
@@ -99,6 +109,8 @@ export default function Register() {
         const result = await register({
             username: values.username,
             email: values.email,
+            firstName: values.firstName,
+            lastName: values.lastName,
             password: values.password,
         });
 
@@ -136,6 +148,29 @@ export default function Register() {
                             iconSize={18}
                             {...getFieldPropsWithValidation('email')}
                         />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <Input 
+                                type="text" 
+                                placeholder="First Name" 
+                                icon={MdPerson}
+                                iconColor="text-gray-500"
+                                iconSize={18}
+                                {...getFieldPropsWithValidation('firstName')}
+                            />
+                        </div>
+                        <div>
+                            <Input 
+                                type="text" 
+                                placeholder="Last Name" 
+                                icon={MdPerson}
+                                iconColor="text-gray-500"
+                                iconSize={18}
+                                {...getFieldPropsWithValidation('lastName')}
+                            />
+                        </div>
                     </div>
 
                     <div>

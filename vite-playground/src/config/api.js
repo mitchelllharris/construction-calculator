@@ -16,6 +16,13 @@ export const API_ENDPOINTS = {
     UPDATE_PROFILE: `${API_BASE_URL}/api/user/profile`,
     CHANGE_PASSWORD: `${API_BASE_URL}/api/user/change-password`,
     VERIFICATION_STATUS: `${API_BASE_URL}/api/user/verification-status`,
+    UPLOAD_PORTFOLIO_IMAGE: `${API_BASE_URL}/api/user/portfolio/upload-image`,
+    UPLOAD_CERTIFICATION_PDF: `${API_BASE_URL}/api/user/certifications/upload-pdf`,
+    UPLOAD_AVATAR: `${API_BASE_URL}/api/user/avatar`,
+  },
+  PROFILE: {
+    GET_BY_USERNAME: (username) => `${API_BASE_URL}/api/profile/${username}`,
+    GET_BY_ID: (id) => `${API_BASE_URL}/api/profile/id/${id}`,
   },
   ADMIN: {
     USERS: `${API_BASE_URL}/api/admin/users`,
@@ -43,6 +50,13 @@ export const API_ENDPOINTS = {
     IMPORT: `${API_BASE_URL}/api/contacts/import`,
     EXPORT: `${API_BASE_URL}/api/contacts/export`,
     BULK_DELETE: `${API_BASE_URL}/api/contacts/bulk-delete`,
+  },
+  INTERACTIONS: {
+    GET_BY_CONTACT: (contactId) => `${API_BASE_URL}/api/contacts/${contactId}/interactions`,
+    GET_BY_ID: (id) => `${API_BASE_URL}/api/interactions/${id}`,
+    CREATE: `${API_BASE_URL}/api/interactions`,
+    UPDATE: (id) => `${API_BASE_URL}/api/interactions/${id}`,
+    DELETE: (id) => `${API_BASE_URL}/api/interactions/${id}`,
   },
   TEST: {
     ALL: `${API_BASE_URL}/api/test/all`,

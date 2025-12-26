@@ -2,6 +2,7 @@ const { authJwt } = require("../middlewares");
 const { apiLimiter } = require("../middlewares/rateLimiter");
 const { body } = require("express-validator");
 const { handleValidationErrors } = require("../middlewares/validator");
+const { uploadAvatar, uploadPortfolioImage, uploadCertificationPDF } = require("../middlewares/upload");
 const controller = require("../controllers/profile.controller");
 
 // Custom email validator that requires TLD with at least 3 characters
@@ -19,6 +20,18 @@ module.exports = function(app) {
         );
         next();
     });
+
+    // Get public profile by username or ID (optional auth for privacy checks)
+    app.get(
+        "/api/profile/:username",
+        [authJwt.verifyTokenOptional], // Optional auth - won't fail if no token
+        controller.getPublicProfile
+    );
+    app.get(
+        "/api/profile/id/:id",
+        [authJwt.verifyTokenOptional], // Optional auth - won't fail if no token
+        controller.getPublicProfile
+    );
 
     // Get profile
     app.get(
@@ -49,14 +62,12 @@ module.exports = function(app) {
                 .withMessage('Email must have a valid domain extension (e.g., .com, .org, .net)')
                 .normalizeEmail(),
             body('firstName')
-                .notEmpty()
-                .withMessage('First name is required')
+                .optional()
                 .trim()
                 .isLength({ min: 1, max: 50 })
                 .withMessage('First name must be between 1 and 50 characters'),
             body('lastName')
-                .notEmpty()
-                .withMessage('Last name is required')
+                .optional()
                 .trim()
                 .isLength({ min: 1, max: 50 })
                 .withMessage('Last name must be between 1 and 50 characters'),
@@ -82,6 +93,33 @@ module.exports = function(app) {
             handleValidationErrors
         ],
         controller.changePassword
+    );
+
+    // Upload portfolio image
+    app.post(
+        "/api/user/portfolio/upload-image",
+        apiLimiter,
+        [authJwt.verifyToken],
+        uploadPortfolioImage,
+        controller.uploadPortfolioImage
+    );
+
+    // Upload certification PDF
+    app.post(
+        "/api/user/certifications/upload-pdf",
+        apiLimiter,
+        [authJwt.verifyToken],
+        uploadCertificationPDF,
+        controller.uploadCertificationPDF
+    );
+
+    // Upload user avatar
+    app.post(
+        "/api/user/avatar",
+        apiLimiter,
+        [authJwt.verifyToken],
+        uploadAvatar,
+        controller.uploadAvatar
     );
 
     // Get verification status
