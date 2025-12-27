@@ -1,18 +1,34 @@
 import React, { useState, useRef } from 'react';
-import { MdImage, MdVideoLibrary, MdClose, MdSend } from 'react-icons/md';
+import { 
+  MdImage, MdVideoLibrary, MdClose, MdSend, MdPeople, MdExpandMore, MdExpandLess,
+  MdLocationOn, MdPoll, MdTag, MdEmojiEmotions, MdGif
+} from 'react-icons/md';
 import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../Button';
 
-export default function PostForm({ profileUserId, onPostCreated }) {
+export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = false }) {
   const [content, setContent] = useState('');
   const [images, setImages] = useState([]);
   const [videos, setVideos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [replySettings, setReplySettings] = useState('everyone');
+  const [showReplySettings, setShowReplySettings] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [pollDuration, setPollDuration] = useState(1); // days
+  const [location, setLocation] = useState(null);
+  const [taggedUsers, setTaggedUsers] = useState([]);
   const fileInputRef = useRef(null);
   const { showError, showSuccess } = useToast();
+  const { user: currentUser } = useAuth();
 
   const handleFileSelect = async (files) => {
     const fileArray = Array.from(files);
@@ -89,8 +105,16 @@ export default function PostForm({ profileUserId, onPostCreated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!content.trim() && images.length === 0 && videos.length === 0) {
-      showError('Please add some content, image, or video');
+    const hasPoll = showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2;
+    const hasContent = content.trim() || images.length > 0 || videos.length > 0;
+    
+    if (!hasContent && !hasPoll) {
+      showError('Please add some content, image, video, or create a poll');
+      return;
+    }
+
+    if (hasPoll && pollOptions.filter(opt => opt.trim()).length < 2) {
+      showError('Poll must have at least 2 options');
       return;
     }
 
@@ -108,6 +132,13 @@ export default function PostForm({ profileUserId, onPostCreated }) {
           content: content.trim() || '', // Send empty string if no content
           images,
           videos,
+          replySettings,
+          poll: showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2 ? {
+            options: pollOptions.filter(opt => opt.trim()),
+            duration: pollDuration
+          } : null,
+          location: location || null,
+          taggedUsers: taggedUsers || [],
         }),
       });
 
@@ -123,6 +154,12 @@ export default function PostForm({ profileUserId, onPostCreated }) {
       setContent('');
       setImages([]);
       setVideos([]);
+      setReplySettings('everyone');
+      setShowPollModal(false);
+      setPollOptions(['', '']);
+      setPollDuration(1);
+      setLocation(null);
+      setTaggedUsers([]);
       
       // Notify parent
       if (onPostCreated) {
@@ -139,6 +176,75 @@ export default function PostForm({ profileUserId, onPostCreated }) {
     return url.startsWith('http') 
       ? url 
       : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${url}`;
+  };
+
+  const replySettingsOptions = [
+    { value: 'everyone', label: 'Everyone can reply' },
+    { value: 'following', label: 'Accounts you follow' },
+    { value: 'verified', label: 'Verified accounts' },
+    { value: 'mentioned', label: 'Only accounts you mention' },
+    { value: 'contacts_only', label: 'Only contacts' },
+    { value: 'contacts_of_contacts', label: 'Contacts of contacts' },
+    ...(isOwnProfile ? [] : [{ value: 'page_owner', label: 'Only page owner' }]),
+  ];
+
+  const getReplySettingsLabel = (value) => {
+    const option = replySettingsOptions.find(opt => opt.value === value);
+    return option ? option.label : 'Everyone can reply';
+  };
+
+  const insertEmoji = (emoji) => {
+    setContent(prev => prev + emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const commonEmojis = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '❤️', '🔥', '💯', '🎉', '🙌'];
+
+  const handleAddPollOption = () => {
+    if (pollOptions.length < 4) {
+      setPollOptions([...pollOptions, '']);
+    }
+  };
+
+  const handleRemovePollOption = (index) => {
+    if (pollOptions.length > 2) {
+      setPollOptions(pollOptions.filter((_, i) => i !== index));
+    }
+  };
+
+  const handlePollOptionChange = (index, value) => {
+    const newOptions = [...pollOptions];
+    newOptions[index] = value;
+    setPollOptions(newOptions);
+  };
+
+  const handleLocationSearch = (query) => {
+    // This would integrate with a location search API (like Google Places)
+    // For now, we'll use a simple implementation
+    if (query.trim()) {
+      setLocation({ name: query, coordinates: null });
+    }
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            name: 'Current Location',
+            coordinates: {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            }
+          });
+        },
+        (error) => {
+          showError('Unable to get your location');
+        }
+      );
+    } else {
+      showError('Geolocation is not supported by your browser');
+    }
   };
 
   return (
@@ -227,17 +333,264 @@ export default function PostForm({ profileUserId, onPostCreated }) {
                 <span className="text-sm">Video</span>
               </div>
             </label>
+            <button
+              type="button"
+              onClick={() => setShowTagModal(true)}
+              className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors"
+              title="Tag people"
+            >
+              <MdTag size={20} />
+              <span className="text-sm">Tag</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPollModal(true)}
+              className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors"
+              title="Create poll"
+            >
+              <MdPoll size={20} />
+              <span className="text-sm">Poll</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLocationModal(true)}
+              className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors"
+              title="Add location"
+            >
+              <MdLocationOn size={20} />
+              <span className="text-sm">Location</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGifPicker(true)}
+              className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors"
+              title="Add GIF"
+            >
+              <MdGif size={20} />
+              <span className="text-sm">GIF</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors"
+              title="Add emoji"
+            >
+              <MdEmojiEmotions size={20} />
+              <span className="text-sm">Emoji</span>
+            </button>
             {uploading && (
               <span className="text-sm text-gray-500">Uploading...</span>
             )}
           </div>
-          <Button
-            type="submit"
-            disabled={posting || uploading || (!content.trim() && images.length === 0 && videos.length === 0)}
-            text={posting ? 'Posting...' : 'Post'}
-            icon={<MdSend size={18} />}
-          />
+          <div className="flex items-center gap-2">
+            {/* Reply Settings */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowReplySettings(!showReplySettings)}
+                className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-gray-100"
+              >
+                <MdPeople size={16} />
+                <span>{getReplySettingsLabel(replySettings)}</span>
+                {showReplySettings ? <MdExpandLess size={16} /> : <MdExpandMore size={16} />}
+              </button>
+              
+              {showReplySettings && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-0" 
+                    onClick={() => setShowReplySettings(false)}
+                  />
+                  <div className="absolute bottom-full right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[220px]">
+                    {replySettingsOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setReplySettings(option.value);
+                          setShowReplySettings(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                          replySettings === option.value ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
+                        } ${option.value === replySettingsOptions[0].value ? 'rounded-t-lg' : ''} ${
+                          option.value === replySettingsOptions[replySettingsOptions.length - 1].value ? 'rounded-b-lg' : ''
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <Button
+              type="submit"
+              disabled={posting || uploading || (!content.trim() && images.length === 0 && videos.length === 0 && !(showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2))}
+              text={posting ? 'Posting...' : 'Post'}
+              icon={<MdSend size={18} />}
+            />
+          </div>
         </div>
+
+        {/* Emoji Picker */}
+        {showEmojiPicker && (
+          <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex flex-wrap gap-2">
+              {commonEmojis.map((emoji, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => insertEmoji(emoji)}
+                  className="text-2xl hover:scale-125 transition-transform"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Poll Modal */}
+        {showPollModal && (
+          <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Create Poll</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPollModal(false);
+                  setPollOptions(['', '']);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <MdClose size={20} />
+              </button>
+            </div>
+            <div className="space-y-2 mb-3">
+              {pollOptions.map((option, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(e) => handlePollOptionChange(index, e.target.value)}
+                    placeholder={`Option ${index + 1}`}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {pollOptions.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePollOption(index)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <MdClose size={20} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {pollOptions.length < 4 && (
+              <button
+                type="button"
+                onClick={handleAddPollOption}
+                className="text-sm text-blue-600 hover:text-blue-800 mb-3"
+              >
+                + Add option
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600">Duration:</label>
+              <select
+                value={pollDuration}
+                onChange={(e) => setPollDuration(Number(e.target.value))}
+                className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={1}>1 day</option>
+                <option value={3}>3 days</option>
+                <option value={7}>7 days</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Location Modal */}
+        {showLocationModal && (
+          <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Add Location</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLocationModal(false);
+                  setLocation(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <MdClose size={20} />
+              </button>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Search for a location..."
+                onChange={(e) => handleLocationSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                className="w-full px-3 py-2 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors text-sm"
+              >
+                Use Current Location
+              </button>
+              {location && (
+                <div className="p-2 bg-white rounded border border-gray-200">
+                  <p className="text-sm text-gray-700">{location.name}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tag Modal */}
+        {showTagModal && (
+          <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Tag People</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTagModal(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <MdClose size={20} />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Search for people to tag..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+            />
+            <p className="text-xs text-gray-500">Tag people feature coming soon</p>
+          </div>
+        )}
+
+        {/* GIF Picker */}
+        {showGifPicker && (
+          <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Add GIF</h3>
+              <button
+                type="button"
+                onClick={() => setShowGifPicker(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <MdClose size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">GIF picker integration coming soon</p>
+          </div>
+        )}
       </form>
     </div>
   );

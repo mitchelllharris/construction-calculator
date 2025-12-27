@@ -31,6 +31,7 @@ export const API_ENDPOINTS = {
     CREATE: `${API_BASE_URL}/api/posts`,
     DELETE: (id) => `${API_BASE_URL}/api/posts/${id}`,
     UPLOAD_MEDIA: `${API_BASE_URL}/api/posts/upload-media`,
+    VOTE: (postId) => `${API_BASE_URL}/api/posts/${postId}/vote`,
   },
   ADMIN: {
     USERS: `${API_BASE_URL}/api/admin/users`,

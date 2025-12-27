@@ -58,6 +58,56 @@ const Post = mongoose.model(
                 default: Date.now
             }
         }],
+        replySettings: {
+            type: String,
+            enum: ['everyone', 'following', 'verified', 'mentioned', 'contacts_only', 'contacts_of_contacts', 'page_owner'],
+            default: 'everyone'
+        },
+        poll: {
+            options: [{
+                type: String,
+                trim: true
+            }],
+            votes: [{
+                userId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User'
+                },
+                optionIndex: {
+                    type: Number,
+                    required: true
+                },
+                votedAt: {
+                    type: Date,
+                    default: Date.now
+                }
+            }],
+            duration: {
+                type: Number,
+                default: 1 // days
+            },
+            endsAt: {
+                type: Date
+            }
+        },
+        location: {
+            name: {
+                type: String,
+                trim: true
+            },
+            coordinates: {
+                lat: {
+                    type: Number
+                },
+                lng: {
+                    type: Number
+                }
+            }
+        },
+        taggedUsers: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
         isDeleted: {
             type: Boolean,
             default: false

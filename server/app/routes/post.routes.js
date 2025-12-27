@@ -35,5 +35,13 @@ module.exports = function(app) {
         uploadPostMedia,
         controller.uploadPostMedia
     );
+
+    // Vote on a poll
+    app.post(
+        "/api/posts/:postId/vote",
+        apiLimiter,
+        [authJwt.verifyToken],
+        controller.voteOnPoll
+    );
 };
 

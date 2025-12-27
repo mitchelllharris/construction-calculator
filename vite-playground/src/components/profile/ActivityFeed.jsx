@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MdDelete, MdThumbUp, MdComment, MdMoreVert, MdChevronRight } from 'react-icons/md';
-import { get } from '../../utils/api';
+import { MdDelete, MdThumbUp, MdComment, MdMoreVert, MdChevronRight, MdCheckCircle } from 'react-icons/md';
+import { get, getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,7 +15,7 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const { user: currentUser } = useAuth();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -45,7 +45,12 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
+      if (!token) {
+        showError('Please log in to delete posts');
+        return;
+      }
+
       const response = await fetch(API_ENDPOINTS.POSTS.DELETE(postId), {
         method: 'DELETE',
         headers: {
@@ -54,13 +59,89 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete post');
+        const error = await response.json().catch(() => ({ message: 'Failed to delete post' }));
+        throw new Error(error.message || 'Failed to delete post');
       }
 
-      setPosts(prev => prev.filter(post => post._id !== postId));
+      // Remove post from list - handle both _id and id formats
+      setPosts(prev => prev.filter(post => {
+        const postIdStr = post._id?.toString() || post.id?.toString();
+        const deleteIdStr = postId.toString();
+        return postIdStr !== deleteIdStr;
+      }));
+      
+      if (showSuccess) {
+        showSuccess('Post deleted successfully');
+      }
     } catch (error) {
       showError(error.message || 'Failed to delete post');
     }
+  };
+
+  const handleVote = async (postId, optionIndex) => {
+    if (!currentUser) {
+      showError('Please log in to vote');
+      return;
+    }
+
+    try {
+      const token = getToken();
+      if (!token) {
+        showError('Please log in to vote');
+        return;
+      }
+
+      const response = await fetch(API_ENDPOINTS.POSTS.VOTE(postId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
+        body: JSON.stringify({ optionIndex }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to vote' }));
+        throw new Error(error.message || 'Failed to vote');
+      }
+
+      const result = await response.json();
+      
+      // Update the post in the list
+      setPosts(prev => prev.map(post => 
+        post._id === postId ? result.post : post
+      ));
+    } catch (error) {
+      showError(error.message || 'Failed to vote');
+    }
+  };
+
+  const getPollResults = (poll) => {
+    if (!poll || !poll.votes) return {};
+    
+    const totalVotes = poll.votes.length;
+    const results = {};
+    
+    poll.options.forEach((_, index) => {
+      const votesForOption = poll.votes.filter(vote => vote.optionIndex === index).length;
+      results[index] = {
+        count: votesForOption,
+        percentage: totalVotes > 0 ? (votesForOption / totalVotes) * 100 : 0
+      };
+    });
+    
+    return results;
+  };
+
+  const getUserVote = (poll) => {
+    if (!poll || !poll.votes || !currentUser) return null;
+    const vote = poll.votes.find(v => v.userId?._id?.toString() === currentUser.id?.toString() || v.userId?.toString() === currentUser.id?.toString());
+    return vote ? vote.optionIndex : null;
+  };
+
+  const isPollEnded = (poll) => {
+    if (!poll || !poll.endsAt) return false;
+    return new Date() > new Date(poll.endsAt);
   };
 
   const formatDate = (dateString) => {
@@ -163,7 +244,10 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
         <div className="overflow-x-auto -mx-6 px-6">
           <div className="flex gap-4 pb-4">
             {posts.map((post) => {
-              const canDelete = isOwnProfile || (currentUser && currentUser.id === post.authorUserId?._id);
+              const currentUserId = currentUser?.id?.toString() || currentUser?._id?.toString();
+              const authorId = post.authorUserId?._id?.toString() || post.authorUserId?.toString();
+              const postProfileId = post.profileUserId?._id?.toString() || post.profileUserId?.toString();
+              const canDelete = isOwnProfile || (currentUserId && (currentUserId === authorId || currentUserId === postProfileId));
               
               return (
                 <div 
@@ -233,6 +317,67 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
                 </div>
               )}
 
+              {/* Poll */}
+              {post.poll && post.poll.options && post.poll.options.length > 0 && (
+                <div className="mb-3">
+                  <div className="space-y-2">
+                    {post.poll.options.map((option, index) => {
+                      const results = getPollResults(post.poll);
+                      const userVote = getUserVote(post.poll);
+                      const pollEnded = isPollEnded(post.poll);
+                      const isSelected = userVote === index;
+                      const result = results[index] || { count: 0, percentage: 0 };
+                      const totalVotes = post.poll.votes?.length || 0;
+
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => !pollEnded && handleVote(post._id, index)}
+                          disabled={pollEnded}
+                          className={`w-full text-left p-2 rounded-lg border-2 transition-all ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300 bg-gray-50'
+                          } ${pollEnded ? 'cursor-default' : 'cursor-pointer'}`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-gray-900">{option}</span>
+                            {isSelected && (
+                              <MdCheckCircle className="text-blue-500" size={16} />
+                            )}
+                          </div>
+                          {totalVotes > 0 && (
+                            <div className="mt-1">
+                              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                                <span>{result.count}</span>
+                                <span>{result.percentage.toFixed(0)}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                <div
+                                  className="bg-blue-500 h-1.5 rounded-full transition-all"
+                                  style={{ width: `${result.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    {(() => {
+                      const totalVotes = post.poll.votes?.length || 0;
+                      const pollEnded = isPollEnded(post.poll);
+                      if (pollEnded) {
+                        return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
+                      }
+                      return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
+                    })()}
+                  </div>
+                </div>
+              )}
+
               {/* Post Actions */}
               <div className="flex items-center gap-4 pt-3 border-t border-gray-200">
                 <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
@@ -243,8 +388,8 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
                   <MdComment size={20} />
                   <span className="text-sm">Comment ({post.comments?.length || 0})</span>
                 </button>
-                </div>
               </div>
+            </div>
             );
             })}
           </div>
@@ -316,6 +461,81 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
                         className="w-full rounded-lg max-h-96"
                       />
                     ))}
+                  </div>
+                )}
+
+                {/* Poll */}
+                {post.poll && post.poll.options && post.poll.options.length > 0 && (
+                  <div className="mb-3">
+                    <div className="space-y-2">
+                      {post.poll.options.map((option, index) => {
+                        const results = getPollResults(post.poll);
+                        const userVote = getUserVote(post.poll);
+                        const pollEnded = isPollEnded(post.poll);
+                        const isSelected = userVote === index;
+                        const result = results[index] || { count: 0, percentage: 0 };
+                        const totalVotes = post.poll.votes?.length || 0;
+
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => !pollEnded && handleVote(post._id, index)}
+                            disabled={pollEnded}
+                            className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                              isSelected
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300 bg-gray-50'
+                            } ${pollEnded ? 'cursor-default' : 'cursor-pointer'}`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-gray-900">{option}</span>
+                              {isSelected && (
+                                <MdCheckCircle className="text-blue-500" size={20} />
+                              )}
+                            </div>
+                            {totalVotes > 0 && (
+                              <div className="mt-2">
+                                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                                  <span>{result.count} {result.count === 1 ? 'vote' : 'votes'}</span>
+                                  <span>{result.percentage.toFixed(1)}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-blue-500 h-2 rounded-full transition-all"
+                                    style={{ width: `${result.percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      {(() => {
+                        const totalVotes = post.poll.votes?.length || 0;
+                        const pollEnded = isPollEnded(post.poll);
+                        if (pollEnded) {
+                          return `Poll ended • ${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
+                        }
+                        if (post.poll.endsAt) {
+                          const endsAt = new Date(post.poll.endsAt);
+                          const now = new Date();
+                          const diffMs = endsAt - now;
+                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                          const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                          if (diffDays > 0) {
+                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • ${diffDays} ${diffDays === 1 ? 'day' : 'days'} left`;
+                          } else if (diffHours > 0) {
+                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} left`;
+                          } else {
+                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • Ending soon`;
+                          }
+                        }
+                        return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
+                      })()}
+                    </div>
                   </div>
                 )}
 

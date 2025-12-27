@@ -576,6 +576,7 @@ export default function Profile() {
                 onPostCreated={() => {
                   setPostsRefreshKey(prev => prev + 1);
                 }}
+                isOwnProfile={isOwnProfile}
               />
             )}
 

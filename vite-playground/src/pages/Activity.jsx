@@ -123,6 +123,7 @@ export default function Activity() {
             <PostForm
               profileUserId={profile.id}
               onPostCreated={handlePostCreated}
+              isOwnProfile={isOwnProfile}
             />
           </div>
         )}

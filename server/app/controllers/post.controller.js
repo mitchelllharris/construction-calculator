@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 // Create a new post
 exports.createPost = async (req, res) => {
     try {
-        const { profileUserId, content, images, videos } = req.body;
+        const { profileUserId, content, images, videos, replySettings, poll, location, taggedUsers } = req.body;
         const authorUserId = req.userId;
 
         // Validate required fields
@@ -36,13 +36,38 @@ exports.createPost = async (req, res) => {
         }
 
         // Create post
-        const post = new Post({
+        const postData = {
             profileUserId,
             authorUserId,
             content: hasContent ? content.trim() : '',
             images: images || [],
-            videos: videos || []
-        });
+            videos: videos || [],
+            replySettings: replySettings || 'everyone'
+        };
+
+        // Add poll if provided
+        if (poll && poll.options && poll.options.length >= 2) {
+            const endsAt = new Date();
+            endsAt.setDate(endsAt.getDate() + (poll.duration || 1));
+            postData.poll = {
+                options: poll.options,
+                votes: [],
+                duration: poll.duration || 1,
+                endsAt: endsAt
+            };
+        }
+
+        // Add location if provided
+        if (location && location.name) {
+            postData.location = location;
+        }
+
+        // Add tagged users if provided
+        if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 0) {
+            postData.taggedUsers = taggedUsers;
+        }
+
+        const post = new Post(postData);
 
         await post.save();
 
@@ -127,6 +152,82 @@ exports.deletePost = async (req, res) => {
         logger.error("Delete post error:", error);
         return res.status(500).send({
             message: error.message || "Failed to delete post"
+        });
+    }
+};
+
+// Vote on a poll
+exports.voteOnPoll = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const { optionIndex } = req.body;
+        const userId = req.userId;
+
+        if (!userId) {
+            return res.status(401).send({ message: "Authentication required" });
+        }
+
+        if (optionIndex === undefined || optionIndex === null) {
+            return res.status(400).send({ message: "Option index is required" });
+        }
+
+        const post = await Post.findById(postId);
+        if (!post) {
+            return res.status(404).send({ message: "Post not found" });
+        }
+
+        if (!post.poll || !post.poll.options) {
+            return res.status(400).send({ message: "This post does not have a poll" });
+        }
+
+        // Check if poll has ended
+        if (post.poll.endsAt && new Date() > new Date(post.poll.endsAt)) {
+            return res.status(400).send({ message: "This poll has ended" });
+        }
+
+        // Validate option index
+        if (optionIndex < 0 || optionIndex >= post.poll.options.length) {
+            return res.status(400).send({ message: "Invalid option index" });
+        }
+
+        // Note: Voting is allowed for all authenticated users regardless of replySettings
+        // The replySettings only controls who can comment/reply, not who can vote on polls
+        
+        // Check if user already voted - remove their previous vote if exists
+        const existingVoteIndex = post.poll.votes.findIndex(
+            vote => {
+                const voteUserId = vote.userId?._id?.toString() || vote.userId?.toString();
+                return voteUserId === userId.toString();
+            }
+        );
+
+        if (existingVoteIndex !== -1) {
+            // Update existing vote
+            post.poll.votes[existingVoteIndex].optionIndex = optionIndex;
+            post.poll.votes[existingVoteIndex].votedAt = new Date();
+        } else {
+            // Add new vote
+            post.poll.votes.push({
+                userId: userId,
+                optionIndex: optionIndex,
+                votedAt: new Date()
+            });
+        }
+
+        await post.save();
+
+        // Populate author info and poll votes
+        await post.populate('authorUserId', 'firstName lastName username avatar');
+        await post.populate('poll.votes.userId', 'firstName lastName username');
+
+        return res.status(200).send({
+            message: "Vote recorded successfully",
+            post
+        });
+    } catch (error) {
+        logger.error("Vote on poll error:", error);
+        return res.status(500).send({
+            message: error.message || "Failed to vote on poll"
         });
     }
 };
