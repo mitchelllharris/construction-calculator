@@ -132,7 +132,6 @@ export default function PDFUpload({ value, onChange, onUploadStart, onUploadComp
 
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-gray-700 mb-2">Certification PDF</label>
       
       {fileName ? (
         <div className="relative">

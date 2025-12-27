@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MdEdit, MdAdd } from 'react-icons/md';
+import { MdAdd } from 'react-icons/md';
 
 export default function EditableSection({
   title,
@@ -10,7 +10,10 @@ export default function EditableSection({
   onAdd,
   children,
   emptyMessage = `Add your first ${title.toLowerCase()}`,
-  className = ''
+  emptyDescription,
+  emptyPlaceholder,
+  className = '',
+  onDismiss
 }) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -20,55 +23,71 @@ export default function EditableSection({
 
   return (
     <div 
-      className={`bg-white shadow rounded-lg p-6 relative ${className}`}
+      className={`bg-gray-50 rounded-lg p-6 relative border border-gray-200 ${className}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Header with Edit/Add Button */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          {Icon && <Icon className="text-blue-600" size={24} />}
-          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-        </div>
-        {isOwnProfile && (
+      {/* Header with Dismiss Button */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+        {isOwnProfile && onDismiss && (
           <button
-            onClick={isEmpty ? onAdd : onEdit}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded transition-colors ${
-              isHovered || isEmpty
-                ? 'text-blue-600 hover:bg-blue-50'
-                : 'text-gray-400 hover:text-blue-600'
-            }`}
+            onClick={onDismiss}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            {isEmpty ? (
-              <>
-                <MdAdd size={18} />
-                Add
-              </>
-            ) : (
-              <>
-                <MdEdit size={18} />
-                Edit
-              </>
-            )}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         )}
       </div>
 
+      {/* Empty Description */}
+      {isEmpty && emptyDescription && (
+        <p className="text-sm text-gray-600 mb-4">{emptyDescription}</p>
+      )}
+
       {/* Content */}
       {isEmpty ? (
-        <div className="text-center py-8 text-gray-500">
-          <p className="mb-4">{emptyMessage}</p>
+        <div className="border-t border-dashed border-gray-300 pt-4">
+          {emptyPlaceholder ? (
+            <div className="flex items-start gap-4">
+              {Icon && (
+                <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Icon className="text-gray-600" size={24} />
+                </div>
+              )}
+              <div className="flex-1">
+                {emptyPlaceholder}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p className="mb-4">{emptyMessage}</p>
+            </div>
+          )}
           {isOwnProfile && (
             <button
               onClick={onAdd}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+              className="mt-4 px-4 py-2 border-2 border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors text-sm font-medium"
             >
-              Get Started
+              Add {title.toLowerCase()}
             </button>
           )}
         </div>
       ) : (
-        <div>{children}</div>
+        <div>
+          {children}
+          {isOwnProfile && (
+            <button
+              onClick={onAdd}
+              className="mt-4 px-4 py-2 border-2 border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors text-sm font-medium flex items-center gap-2"
+            >
+              <MdAdd size={18} />
+              Add {title.toLowerCase()}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

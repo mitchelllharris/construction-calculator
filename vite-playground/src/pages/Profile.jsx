@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -8,10 +8,16 @@ import LoadingPage from '../components/LoadingPage';
 import EditableSection from '../components/EditableSection';
 import BioEditModal from '../components/profile/BioEditModal';
 import SkillsEditModal from '../components/profile/SkillsEditModal';
-import ExperienceEditModal from '../components/profile/ExperienceEditModal';
-import CertificationEditModal from '../components/profile/CertificationEditModal';
-import PortfolioEditModal from '../components/profile/PortfolioEditModal';
+import ExperienceEntryModal from '../components/profile/ExperienceEntryModal';
+import EducationEntryModal from '../components/profile/EducationEntryModal';
+import CertificationEntryModal from '../components/profile/CertificationEntryModal';
+import PortfolioEntryModal from '../components/profile/PortfolioEntryModal';
 import AvatarEditModal from '../components/profile/AvatarEditModal';
+import AnalyticsSection from '../components/profile/AnalyticsSection';
+import PhotosGallery from '../components/profile/PhotosGallery';
+import PhotoGalleryModal from '../components/profile/PhotoGalleryModal';
+import PostForm from '../components/profile/PostForm';
+import ActivityFeed from '../components/profile/ActivityFeed';
 import { 
   MdEmail, MdPhone, MdLocationOn, MdBusiness, MdWork, MdSchool, 
   MdStar, MdLink, MdEdit, MdArrowBack, MdCheckCircle, MdCalendarToday,
@@ -32,13 +38,40 @@ export default function Profile() {
   const [showBioModal, setShowBioModal] = useState(false);
   const [showSkillsModal, setShowSkillsModal] = useState(false);
   const [showExperienceModal, setShowExperienceModal] = useState(false);
+  const [editingExperienceIndex, setEditingExperienceIndex] = useState(null);
+  const [showEducationModal, setShowEducationModal] = useState(false);
+  const [editingEducationIndex, setEditingEducationIndex] = useState(null);
   const [showCertificationsModal, setShowCertificationsModal] = useState(false);
+  const [editingCertificationIndex, setEditingCertificationIndex] = useState(null);
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+  const [editingPortfolioIndex, setEditingPortfolioIndex] = useState(null);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [showPhotoGalleryModal, setShowPhotoGalleryModal] = useState(false);
+  const [photoGalleryIndex, setPhotoGalleryIndex] = useState(0);
+  const [postsRefreshKey, setPostsRefreshKey] = useState(0);
+
+  // Calculate isOwnProfile - needs to be before useEffect that uses it
+  const isOwnProfile = currentUser && profile && (currentUser.id === profile?.id || currentUser.username === profile?.username);
 
   useEffect(() => {
     fetchProfile();
   }, [username, id]);
+
+  // Track profile view (only for non-owners) - use ref to prevent duplicate calls
+  const hasTrackedView = useRef(new Set());
+  useEffect(() => {
+    // Only track once per profile load, and only if not own profile
+    if (profile && !isOwnProfile && profile.id && !hasTrackedView.current.has(profile.id)) {
+      hasTrackedView.current.add(profile.id);
+      // Track view asynchronously without blocking
+      fetch(API_ENDPOINTS.PROFILE.TRACK_VIEW(profile.id), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }).catch(err => console.error('Failed to track view:', err));
+    }
+  }, [profile?.id, isOwnProfile]);
 
   const fetchProfile = async () => {
     try {
@@ -75,8 +108,6 @@ export default function Profile() {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
   };
 
-  const isOwnProfile = currentUser && (currentUser.id === profile?.id || currentUser.username === profile?.username);
-
   // Save handlers
   const handleSaveBio = async (bio) => {
     const result = await updateProfile({ ...profile, bio });
@@ -102,36 +133,210 @@ export default function Profile() {
     }
   };
 
-  const handleSaveExperience = async (experience) => {
-    const result = await updateProfile({ ...profile, experience });
+  // Experience handlers
+  const handleAddExperience = () => {
+    setEditingExperienceIndex(null);
+    setShowExperienceModal(true);
+  };
+
+  const handleEditExperience = (index) => {
+    setEditingExperienceIndex(index);
+    setShowExperienceModal(true);
+  };
+
+  const handleSaveExperience = async (experienceData) => {
+    const currentExperience = profile.experience || [];
+    let updatedExperience;
+    
+    if (editingExperienceIndex !== null) {
+      // Update existing
+      updatedExperience = [...currentExperience];
+      updatedExperience[editingExperienceIndex] = experienceData;
+    } else {
+      // Add new
+      updatedExperience = [...currentExperience, experienceData];
+    }
+    
+    const result = await updateProfile({ ...profile, experience: updatedExperience });
     if (result.success) {
-      setProfile({ ...profile, experience });
+      setProfile({ ...profile, experience: updatedExperience });
       await fetchProfile();
-      showSuccess('Experience updated successfully');
+      showSuccess(editingExperienceIndex !== null ? 'Experience updated successfully' : 'Experience added successfully');
+      setShowExperienceModal(false);
+      setEditingExperienceIndex(null);
     } else {
       showError(result.message);
       throw new Error(result.message);
     }
   };
 
-  const handleSaveCertifications = async (certifications) => {
-    const result = await updateProfile({ ...profile, certifications });
+  const handleDeleteExperience = async () => {
+    const currentExperience = profile.experience || [];
+    const updatedExperience = currentExperience.filter((_, i) => i !== editingExperienceIndex);
+    
+    const result = await updateProfile({ ...profile, experience: updatedExperience });
     if (result.success) {
-      setProfile({ ...profile, certifications });
+      setProfile({ ...profile, experience: updatedExperience });
       await fetchProfile();
-      showSuccess('Certifications updated successfully');
+      showSuccess('Experience deleted successfully');
+      setShowExperienceModal(false);
+      setEditingExperienceIndex(null);
     } else {
       showError(result.message);
       throw new Error(result.message);
     }
   };
 
-  const handleSavePortfolio = async (portfolio) => {
-    const result = await updateProfile({ ...profile, portfolio });
+  // Education handlers
+  const handleAddEducation = () => {
+    setEditingEducationIndex(null);
+    setShowEducationModal(true);
+  };
+
+  const handleEditEducation = (index) => {
+    setEditingEducationIndex(index);
+    setShowEducationModal(true);
+  };
+
+  const handleSaveEducation = async (educationData) => {
+    const currentEducation = profile.education || [];
+    let updatedEducation;
+    
+    if (editingEducationIndex !== null) {
+      updatedEducation = [...currentEducation];
+      updatedEducation[editingEducationIndex] = educationData;
+    } else {
+      updatedEducation = [...currentEducation, educationData];
+    }
+    
+    const result = await updateProfile({ ...profile, education: updatedEducation });
     if (result.success) {
-      setProfile({ ...profile, portfolio });
+      setProfile({ ...profile, education: updatedEducation });
       await fetchProfile();
-      showSuccess('Portfolio updated successfully');
+      showSuccess(editingEducationIndex !== null ? 'Education updated successfully' : 'Education added successfully');
+      setShowEducationModal(false);
+      setEditingEducationIndex(null);
+    } else {
+      showError(result.message);
+      throw new Error(result.message);
+    }
+  };
+
+  const handleDeleteEducation = async () => {
+    const currentEducation = profile.education || [];
+    const updatedEducation = currentEducation.filter((_, i) => i !== editingEducationIndex);
+    
+    const result = await updateProfile({ ...profile, education: updatedEducation });
+    if (result.success) {
+      setProfile({ ...profile, education: updatedEducation });
+      await fetchProfile();
+      showSuccess('Education deleted successfully');
+      setShowEducationModal(false);
+      setEditingEducationIndex(null);
+    } else {
+      showError(result.message);
+      throw new Error(result.message);
+    }
+  };
+
+  // Certification handlers
+  const handleAddCertification = () => {
+    setEditingCertificationIndex(null);
+    setShowCertificationsModal(true);
+  };
+
+  const handleEditCertification = (index) => {
+    setEditingCertificationIndex(index);
+    setShowCertificationsModal(true);
+  };
+
+  const handleSaveCertification = async (certificationData) => {
+    const currentCertifications = profile.certifications || [];
+    let updatedCertifications;
+    
+    if (editingCertificationIndex !== null) {
+      updatedCertifications = [...currentCertifications];
+      updatedCertifications[editingCertificationIndex] = certificationData;
+    } else {
+      updatedCertifications = [...currentCertifications, certificationData];
+    }
+    
+    const result = await updateProfile({ ...profile, certifications: updatedCertifications });
+    if (result.success) {
+      setProfile({ ...profile, certifications: updatedCertifications });
+      await fetchProfile();
+      showSuccess(editingCertificationIndex !== null ? 'Certification updated successfully' : 'Certification added successfully');
+      setShowCertificationsModal(false);
+      setEditingCertificationIndex(null);
+    } else {
+      showError(result.message);
+      throw new Error(result.message);
+    }
+  };
+
+  const handleDeleteCertification = async () => {
+    const currentCertifications = profile.certifications || [];
+    const updatedCertifications = currentCertifications.filter((_, i) => i !== editingCertificationIndex);
+    
+    const result = await updateProfile({ ...profile, certifications: updatedCertifications });
+    if (result.success) {
+      setProfile({ ...profile, certifications: updatedCertifications });
+      await fetchProfile();
+      showSuccess('Certification deleted successfully');
+      setShowCertificationsModal(false);
+      setEditingCertificationIndex(null);
+    } else {
+      showError(result.message);
+      throw new Error(result.message);
+    }
+  };
+
+  // Portfolio handlers
+  const handleAddPortfolio = () => {
+    setEditingPortfolioIndex(null);
+    setShowPortfolioModal(true);
+  };
+
+  const handleEditPortfolio = (index) => {
+    setEditingPortfolioIndex(index);
+    setShowPortfolioModal(true);
+  };
+
+  const handleSavePortfolio = async (portfolioData) => {
+    const currentPortfolio = profile.portfolio || [];
+    let updatedPortfolio;
+    
+    if (editingPortfolioIndex !== null) {
+      updatedPortfolio = [...currentPortfolio];
+      updatedPortfolio[editingPortfolioIndex] = portfolioData;
+    } else {
+      updatedPortfolio = [...currentPortfolio, portfolioData];
+    }
+    
+    const result = await updateProfile({ ...profile, portfolio: updatedPortfolio });
+    if (result.success) {
+      setProfile({ ...profile, portfolio: updatedPortfolio });
+      await fetchProfile();
+      showSuccess(editingPortfolioIndex !== null ? 'Portfolio updated successfully' : 'Portfolio added successfully');
+      setShowPortfolioModal(false);
+      setEditingPortfolioIndex(null);
+    } else {
+      showError(result.message);
+      throw new Error(result.message);
+    }
+  };
+
+  const handleDeletePortfolio = async () => {
+    const currentPortfolio = profile.portfolio || [];
+    const updatedPortfolio = currentPortfolio.filter((_, i) => i !== editingPortfolioIndex);
+    
+    const result = await updateProfile({ ...profile, portfolio: updatedPortfolio });
+    if (result.success) {
+      setProfile({ ...profile, portfolio: updatedPortfolio });
+      await fetchProfile();
+      showSuccess('Portfolio deleted successfully');
+      setShowPortfolioModal(false);
+      setEditingPortfolioIndex(null);
     } else {
       showError(result.message);
       throw new Error(result.message);
@@ -155,6 +360,31 @@ export default function Profile() {
     profile.location?.state,
     profile.location?.country
   ].filter(Boolean).join(', ');
+
+  // Extract all images from portfolio for photo gallery
+  const getAllPortfolioImages = () => {
+    const images = [];
+    profile.portfolio?.forEach((item) => {
+      if (item.images && Array.isArray(item.images)) {
+        item.images.forEach((imageUrl) => {
+          images.push({
+            url: imageUrl,
+            date: item.date ? new Date(item.date) : new Date(0),
+            projectTitle: item.title || 'Untitled Project',
+          });
+        });
+      }
+    });
+    // Sort by date (most recent first)
+    return images.sort((a, b) => b.date - a.date);
+  };
+
+  const allPortfolioImages = getAllPortfolioImages();
+
+  const handlePhotoClick = (index) => {
+    setPhotoGalleryIndex(index);
+    setShowPhotoGalleryModal(true);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -211,12 +441,24 @@ export default function Profile() {
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">
                       {profile.firstName} {profile.lastName}
                     </h1>
-                    {profile.businessName && (
-                      <p className="text-xl text-gray-600 mb-2">{profile.businessName}</p>
-                    )}
-                    {profile.trade && (
-                      <p className="text-lg text-blue-600 font-medium">{profile.trade}</p>
-                    )}
+                    {(() => {
+                      // Get current position from experience, or fall back to trade/businessName
+                      const currentExperience = profile.experience?.find(exp => exp.isCurrent);
+                      if (currentExperience && currentExperience.position && currentExperience.company) {
+                        return (
+                          <p className="text-xl text-gray-600 mb-2">
+                            {currentExperience.position} at {currentExperience.company}
+                          </p>
+                        );
+                      } else if (profile.trade && profile.businessName) {
+                        return (
+                          <p className="text-xl text-gray-600 mb-2">
+                            {profile.trade} at {profile.businessName}
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                     {locationString && (
                       <div className="flex items-center gap-2 text-gray-600 mt-2">
                         <MdLocationOn size={18} />
@@ -320,6 +562,23 @@ export default function Profile() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Post Form - Visible to owner and visitors (based on privacy) */}
+            {(() => {
+              const postsPrivacy = profile.privacySettings?.posts || 'public';
+              // Show to owner always, or to visitors if privacy allows
+              if (isOwnProfile) return true;
+              if (postsPrivacy === 'private') return false;
+              // For public, contacts_only, contacts_of_contacts - show to everyone (backend will validate)
+              return true;
+            })() && (
+              <PostForm
+                profileUserId={profile.id}
+                onPostCreated={() => {
+                  setPostsRefreshKey(prev => prev + 1);
+                }}
+              />
+            )}
+
             {/* Bio */}
             <EditableSection
               title="About"
@@ -332,19 +591,46 @@ export default function Profile() {
               <p className="text-gray-700 whitespace-pre-wrap break-words">{profile.bio}</p>
             </EditableSection>
 
+            {/* Activity Feed */}
+            <ActivityFeed
+              key={postsRefreshKey}
+              profileId={profile?.id}
+              isOwnProfile={isOwnProfile}
+              username={username || profile?.username}
+              showViewAll={true}
+              limit={3}
+            />
+
             {/* Experience */}
             <EditableSection
               title="Experience"
               icon={MdWork}
               isEmpty={!profile.experience || profile.experience.length === 0}
               isOwnProfile={isOwnProfile}
-              onEdit={() => setShowExperienceModal(true)}
-              onAdd={() => setShowExperienceModal(true)}
+              onEdit={handleAddExperience}
+              onAdd={handleAddExperience}
               emptyMessage="Add your first work experience"
+              emptyDescription="Showcase your accomplishments and get up to 2X as many profile views and connections"
+              emptyPlaceholder={
+                <div>
+                  <p className="font-semibold text-gray-900">Job Title</p>
+                  <p className="text-gray-600 text-sm">Organization</p>
+                  <p className="text-gray-600 text-sm">2023 - present</p>
+                </div>
+              }
             >
               <div className="space-y-6">
                 {profile.experience?.map((exp, index) => (
-                  <div key={index} className="border-l-4 border-blue-500 pl-4 pb-4">
+                  <div key={index} className="border-l-4 border-blue-500 pl-4 pb-4 relative group">
+                    {isOwnProfile && (
+                      <button
+                        onClick={() => handleEditExperience(index)}
+                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1"
+                      >
+                        <MdEdit size={18} />
+                        Edit
+                      </button>
+                    )}
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h3 className="font-semibold text-lg text-gray-900">{exp.position}</h3>
@@ -396,6 +682,71 @@ export default function Profile() {
               </div>
             </EditableSection>
 
+            {/* Education */}
+            <EditableSection
+              title="Education"
+              icon={MdSchool}
+              isEmpty={!profile.education || profile.education.length === 0}
+              isOwnProfile={isOwnProfile}
+              onEdit={handleAddEducation}
+              onAdd={handleAddEducation}
+              emptyMessage="Add your first education"
+              emptyDescription="Show your qualifications and be up to 2X more likely to receive a recruiter InMail"
+              emptyPlaceholder={
+                <div>
+                  <p className="font-semibold text-gray-900">School</p>
+                  <p className="text-gray-600 text-sm">Degree, Field of study</p>
+                  <p className="text-gray-600 text-sm">2019 - 2023</p>
+                </div>
+              }
+            >
+              <div className="space-y-6">
+                {profile.education?.map((edu, index) => (
+                  <div key={index} className="border-l-4 border-blue-500 pl-4 pb-4 relative group">
+                    {isOwnProfile && (
+                      <button
+                        onClick={() => handleEditEducation(index)}
+                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1"
+                      >
+                        <MdEdit size={18} />
+                        Edit
+                      </button>
+                    )}
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-semibold text-lg text-gray-900">{edu.school}</h3>
+                        {(edu.degree || edu.fieldOfStudy) && (
+                          <p className="text-gray-700 font-medium">
+                            {[edu.degree, edu.fieldOfStudy].filter(Boolean).join(', ')}
+                          </p>
+                        )}
+                        {edu.grade && (
+                          <p className="text-gray-600 text-sm mt-1">Grade: {edu.grade}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
+                      <MdCalendarToday size={14} />
+                      <span>
+                        {edu.startDate ? formatDate(edu.startDate) : 'N/A'}
+                        {' - '}
+                        {edu.isCurrent ? (
+                          <span className="text-blue-600 font-medium">Present</span>
+                        ) : edu.endDate ? (
+                          formatDate(edu.endDate)
+                        ) : (
+                          'N/A'
+                        )}
+                      </span>
+                    </div>
+                    {edu.description && (
+                      <p className="text-gray-700 text-sm mb-3 whitespace-pre-wrap">{edu.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </EditableSection>
+
             {/* Skills */}
             <EditableSection
               title="Skills"
@@ -423,13 +774,22 @@ export default function Profile() {
               icon={MdSchool}
               isEmpty={!profile.certifications || profile.certifications.length === 0}
               isOwnProfile={isOwnProfile}
-              onEdit={() => setShowCertificationsModal(true)}
-              onAdd={() => setShowCertificationsModal(true)}
+              onEdit={handleAddCertification}
+              onAdd={handleAddCertification}
               emptyMessage="Add your first certification"
             >
               <div className="space-y-4">
                 {profile.certifications?.map((cert, index) => (
-                  <div key={index} className="border-l-4 border-blue-500 pl-4">
+                  <div key={index} className="border-l-4 border-blue-500 pl-4 relative group">
+                    {isOwnProfile && (
+                      <button
+                        onClick={() => handleEditCertification(index)}
+                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1"
+                      >
+                        <MdEdit size={18} />
+                        Edit
+                      </button>
+                    )}
                     <h3 className="font-semibold text-gray-900">{cert.name}</h3>
                     {cert.issuer && (
                       <p className="text-gray-600 text-sm">Issued by: {cert.issuer}</p>
@@ -480,48 +840,84 @@ export default function Profile() {
               icon={MdImage}
               isEmpty={!profile.portfolio || profile.portfolio.length === 0}
               isOwnProfile={isOwnProfile}
-              onEdit={() => setShowPortfolioModal(true)}
-              onAdd={() => setShowPortfolioModal(true)}
+              onEdit={handleAddPortfolio}
+              onAdd={handleAddPortfolio}
               emptyMessage="Add your first portfolio project"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-6">
                 {profile.portfolio?.map((item, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
-                    {item.imageUrl && (
-                      <div className="h-48 bg-gray-200 overflow-hidden">
-                        <img
-                          src={item.imageUrl.startsWith('http') ? item.imageUrl : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${item.imageUrl}`}
-                          alt={item.title}
-                          className="w-full h-full object-cover"
-                        />
+                  <div key={index} className="border border-gray-200 rounded-lg overflow-hidden bg-white relative group">
+                    {isOwnProfile && (
+                      <button
+                        onClick={() => handleEditPortfolio(index)}
+                        className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded bg-white shadow flex items-center gap-1"
+                      >
+                        <MdEdit size={18} />
+                        Edit
+                      </button>
+                    )}
+                    {/* Image Gallery */}
+                    {item.images && item.images.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 p-4 bg-gray-50">
+                        {item.images.map((imageUrl, imgIndex) => {
+                          const fullUrl = imageUrl.startsWith('http') 
+                            ? imageUrl 
+                            : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${imageUrl}`;
+                          return (
+                            <div key={imgIndex} className="aspect-square rounded-lg overflow-hidden bg-gray-200">
+                              <img
+                                src={fullUrl}
+                                alt={`${item.title} - Image ${imgIndex + 1}`}
+                                className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+                                onClick={() => {
+                                  // Open image in lightbox/modal (simple window.open for now)
+                                  window.open(fullUrl, '_blank');
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
+                    
+                    {/* Project Details */}
                     <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
+                      <h3 className="font-semibold text-lg text-gray-900 mb-2">{item.title}</h3>
                       {item.description && (
-                        <p className="text-gray-600 text-sm mb-2">{item.description}</p>
+                        <p className="text-gray-700 text-sm mb-3 whitespace-pre-wrap">{item.description}</p>
                       )}
-                      {item.projectLocation && (
-                        <p className="text-gray-500 text-xs flex items-center gap-1">
-                          <MdLocationOn size={14} />
-                          {item.projectLocation}
-                        </p>
-                      )}
-                      {item.projectDate && (
-                        <p className="text-gray-500 text-xs flex items-center gap-1 mt-1">
-                          <MdCalendarToday size={14} />
-                          {formatDate(item.projectDate)}
-                        </p>
-                      )}
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-500">
+                        {item.location && (
+                          <p className="flex items-center gap-1">
+                            <MdLocationOn size={16} />
+                            {item.location}
+                          </p>
+                        )}
+                        {item.date && (
+                          <p className="flex items-center gap-1">
+                            <MdCalendarToday size={16} />
+                            {formatDate(item.date)}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </EditableSection>
+
+            {/* Analytics - Only visible to owner, moved to bottom */}
+            <AnalyticsSection profileId={profile?.id} isOwnProfile={isOwnProfile} />
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* Photos Gallery */}
+            <PhotosGallery
+              allImages={allPortfolioImages}
+              onImageClick={handlePhotoClick}
+            />
+
             {/* Service Areas */}
             {profile.serviceAreas && profile.serviceAreas.length > 0 && (
               <div className="bg-white shadow rounded-lg p-6">
@@ -575,23 +971,45 @@ export default function Profile() {
         initialSkills={profile?.skills || []}
         onSave={handleSaveSkills}
       />
-      <ExperienceEditModal
+      <ExperienceEntryModal
         isOpen={showExperienceModal}
-        onClose={() => setShowExperienceModal(false)}
-        initialExperience={profile?.experience || []}
+        onClose={() => {
+          setShowExperienceModal(false);
+          setEditingExperienceIndex(null);
+        }}
+        initialExperience={editingExperienceIndex !== null ? profile?.experience?.[editingExperienceIndex] : null}
         onSave={handleSaveExperience}
+        onDelete={handleDeleteExperience}
       />
-      <CertificationEditModal
+      <EducationEntryModal
+        isOpen={showEducationModal}
+        onClose={() => {
+          setShowEducationModal(false);
+          setEditingEducationIndex(null);
+        }}
+        initialEducation={editingEducationIndex !== null ? profile?.education?.[editingEducationIndex] : null}
+        onSave={handleSaveEducation}
+        onDelete={handleDeleteEducation}
+      />
+      <CertificationEntryModal
         isOpen={showCertificationsModal}
-        onClose={() => setShowCertificationsModal(false)}
-        initialCertifications={profile?.certifications || []}
-        onSave={handleSaveCertifications}
+        onClose={() => {
+          setShowCertificationsModal(false);
+          setEditingCertificationIndex(null);
+        }}
+        initialCertification={editingCertificationIndex !== null ? profile?.certifications?.[editingCertificationIndex] : null}
+        onSave={handleSaveCertification}
+        onDelete={handleDeleteCertification}
       />
-      <PortfolioEditModal
+      <PortfolioEntryModal
         isOpen={showPortfolioModal}
-        onClose={() => setShowPortfolioModal(false)}
-        initialPortfolio={profile?.portfolio || []}
+        onClose={() => {
+          setShowPortfolioModal(false);
+          setEditingPortfolioIndex(null);
+        }}
+        initialPortfolio={editingPortfolioIndex !== null ? profile?.portfolio?.[editingPortfolioIndex] : null}
         onSave={handleSavePortfolio}
+        onDelete={handleDeletePortfolio}
       />
       <AvatarEditModal
         isOpen={showAvatarModal}
@@ -602,6 +1020,12 @@ export default function Profile() {
           await fetchProfile();
           await fetchUserProfile();
         }}
+      />
+      <PhotoGalleryModal
+        isOpen={showPhotoGalleryModal}
+        onClose={() => setShowPhotoGalleryModal(false)}
+        images={allPortfolioImages}
+        initialIndex={photoGalleryIndex}
       />
     </div>
   );

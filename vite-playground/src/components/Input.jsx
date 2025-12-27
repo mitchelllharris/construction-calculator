@@ -7,6 +7,7 @@ export default function Input({
   value, 
   onChange,
   className = '',
+  label,
   icon: IconComponent,
   iconPosition = 'left',
   iconColor,
@@ -29,6 +30,11 @@ export default function Input({
 
   return (
     <div className="w-full">
+      {label && (
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+        </label>
+      )}
       <div className={`items-center flex relative w-full border ${getBorderColor()} px-3 py-2 rounded-sm transition-colors ${error ? 'bg-red-50' : success ? 'bg-green-50' : 'bg-white'}`}>
         {IconComponent && iconPosition === 'left' && (
           <div className='mr-2'>

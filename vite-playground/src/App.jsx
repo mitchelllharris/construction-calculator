@@ -13,6 +13,7 @@ import Pricing from './pages/Pricing.jsx'
 import Contacts from './pages/Contacts.jsx'
 import ContactDetail from './pages/ContactDetail.jsx'
 import Profile from './pages/Profile.jsx'
+import Activity from './pages/Activity.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
@@ -38,6 +39,7 @@ function AppContent() {
         <Route path="/about" element={<About />}/>
         <Route path="/contact" element={<Contact />}/>
         <Route path="/pricing" element={<Pricing />}/>
+        <Route path="/profile/:username/activity" element={<Activity />}/>
         <Route path="/profile/:username" element={<Profile />}/>
         <Route path="/profile/id/:id" element={<Profile />}/>
         <Route path="/login" element={<Login />}/>

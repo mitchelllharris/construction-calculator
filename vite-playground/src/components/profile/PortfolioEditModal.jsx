@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MdClose, MdDelete, MdAdd } from 'react-icons/md';
 import Input from '../Input';
 import Button from '../Button';
-import ImageUpload from '../ImageUpload';
+import ImageGallery from '../ImageGallery';
 import { useToast } from '../../contexts/ToastContext';
 
 export default function PortfolioEditModal({ isOpen, onClose, initialPortfolio = [], onSave }) {
@@ -16,11 +16,11 @@ export default function PortfolioEditModal({ isOpen, onClose, initialPortfolio =
         ? initialPortfolio.map(item => ({
             title: item.title || '',
             description: item.description || '',
-            imageUrl: item.imageUrl || '',
-            projectDate: item.projectDate ? new Date(item.projectDate).toISOString().slice(0, 10) : '',
-            projectLocation: item.projectLocation || '',
+            images: item.images || [],
+            date: item.date ? new Date(item.date).toISOString().slice(0, 10) : '',
+            location: item.location || '',
           }))
-        : [{ title: '', description: '', imageUrl: '', projectDate: '', projectLocation: '' }]
+        : [{ title: '', description: '', images: [], date: '', location: '' }]
       );
     }
   }, [isOpen, initialPortfolio]);
@@ -29,9 +29,9 @@ export default function PortfolioEditModal({ isOpen, onClose, initialPortfolio =
     setPortfolio([...portfolio, {
       title: '',
       description: '',
-      imageUrl: '',
-      projectDate: '',
-      projectLocation: '',
+      images: [],
+      date: '',
+      location: '',
     }]);
   };
 
@@ -53,9 +53,9 @@ export default function PortfolioEditModal({ isOpen, onClose, initialPortfolio =
         .map(item => ({
           title: item.title.trim(),
           description: item.description.trim() || null,
-          imageUrl: item.imageUrl.trim() || null,
-          projectDate: item.projectDate || null,
-          projectLocation: item.projectLocation.trim() || null,
+          images: Array.isArray(item.images) ? item.images.filter(img => img && img.trim()) : [],
+          date: item.date || null,
+          location: item.location.trim() || null,
         }));
       await onSave(cleaned);
       onClose();
@@ -116,30 +116,24 @@ export default function PortfolioEditModal({ isOpen, onClose, initialPortfolio =
                     placeholder="Project Description"
                   />
                 </div>
-                <ImageUpload
-                  value={item.imageUrl}
-                  onChange={(e) => handleUpdateItem(index, 'imageUrl', e.target.value)}
-                  onUploadComplete={(imageUrl) => {
-                    handleUpdateItem(index, 'imageUrl', imageUrl);
-                    showSuccess('Image uploaded successfully');
-                  }}
-                  onUploadError={(error) => {
-                    showError(error);
-                  }}
+                <ImageGallery
+                  images={item.images || []}
+                  onChange={(images) => handleUpdateItem(index, 'images', images)}
+                  maxSizeMB={5}
                 />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Project Date</label>
                   <Input
                     type="date"
-                    value={item.projectDate}
-                    onChange={(e) => handleUpdateItem(index, 'projectDate', e.target.value)}
+                    value={item.date}
+                    onChange={(e) => handleUpdateItem(index, 'date', e.target.value)}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
                   <Input
-                    value={item.projectLocation}
-                    onChange={(e) => handleUpdateItem(index, 'projectLocation', e.target.value)}
+                    value={item.location}
+                    onChange={(e) => handleUpdateItem(index, 'location', e.target.value)}
                     placeholder="Project Location"
                   />
                 </div>

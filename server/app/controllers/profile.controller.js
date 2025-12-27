@@ -1,6 +1,7 @@
 const db = require("../models");
 const User = db.user;
 const Contact = db.contact;
+const ProfileView = db.profileView;
 const bcrypt = require("bcryptjs");
 const { generateToken, sendVerificationEmail } = require("../services/email.service");
 const logger = require("../utils/logger");
@@ -35,6 +36,8 @@ exports.getProfile = async (req, res) => {
             location: user.location || {},
             yearsOfExperience: user.yearsOfExperience || null,
             skills: user.skills || [],
+            experience: user.experience || [],
+            education: user.education || [],
             certifications: user.certifications || [],
             portfolio: user.portfolio || [],
             serviceAreas: user.serviceAreas || [],
@@ -67,7 +70,7 @@ exports.updateProfile = async (req, res) => {
         const { 
             username, email, firstName, lastName, 
             trade, businessName, bio, phone, website,
-            location, yearsOfExperience, experience, skills, certifications,
+            location, yearsOfExperience, experience, education, skills, certifications,
             portfolio, serviceAreas, licenseNumbers, socialMedia
         } = req.body;
         const updates = {};
@@ -130,7 +133,7 @@ exports.updateProfile = async (req, res) => {
         // Update privacy settings
         if (req.body.hasOwnProperty('privacySettings') && typeof req.body.privacySettings === 'object') {
             const validPrivacyOptions = ['public', 'contacts_of_contacts', 'contacts_only', 'private'];
-            const privacyFields = ['phone', 'website', 'bio', 'experience', 'skills', 'certifications', 
+            const privacyFields = ['phone', 'website', 'bio', 'experience', 'education', 'skills', 'certifications', 
                 'portfolio', 'serviceAreas', 'licenseNumbers', 'location', 'socialMedia', 'trade', 
                 'businessName', 'yearsOfExperience'];
             
@@ -168,6 +171,7 @@ exports.updateProfile = async (req, res) => {
         if (req.body.hasOwnProperty('location')) updates.location = location || {};
         if (req.body.hasOwnProperty('yearsOfExperience')) updates.yearsOfExperience = yearsOfExperience || null;
         if (req.body.hasOwnProperty('experience')) updates.experience = Array.isArray(experience) ? experience : [];
+        if (req.body.hasOwnProperty('education')) updates.education = Array.isArray(education) ? education : [];
         if (req.body.hasOwnProperty('skills')) updates.skills = Array.isArray(skills) ? skills : [];
         if (req.body.hasOwnProperty('certifications')) {
             // Normalize certifications - ensure both expirationDate and expiryDate are set
@@ -212,6 +216,7 @@ exports.updateProfile = async (req, res) => {
                 location: updatedUser.location || {},
                 yearsOfExperience: updatedUser.yearsOfExperience || null,
                 experience: updatedUser.experience || [],
+                education: updatedUser.education || [],
                 skills: updatedUser.skills || [],
                 certifications: updatedUser.certifications || [],
                 portfolio: updatedUser.portfolio || [],
@@ -357,6 +362,7 @@ exports.getPublicProfile = async (req, res) => {
         const showWebsite = await checkPrivacy(privacySettings.website || 'private', viewerUserId, user._id, user.email);
         const showBio = await checkPrivacy(privacySettings.bio || 'public', viewerUserId, user._id, user.email);
         const showExperience = await checkPrivacy(privacySettings.experience || 'public', viewerUserId, user._id, user.email);
+        const showEducation = await checkPrivacy(privacySettings.education || 'public', viewerUserId, user._id, user.email);
         const showSkills = await checkPrivacy(privacySettings.skills || 'public', viewerUserId, user._id, user.email);
         const showCertifications = await checkPrivacy(privacySettings.certifications || 'public', viewerUserId, user._id, user.email);
         const showPortfolio = await checkPrivacy(privacySettings.portfolio || 'public', viewerUserId, user._id, user.email);
@@ -393,6 +399,9 @@ exports.getPublicProfile = async (req, res) => {
         }
         if (showExperience && user.experience) {
             response.experience = user.experience;
+        }
+        if (showEducation && user.education) {
+            response.education = user.education;
         }
         if (showSkills && user.skills) {
             response.skills = user.skills;
@@ -555,6 +564,169 @@ exports.getVerificationStatus = async (req, res) => {
         const isDevelopment = process.env.NODE_ENV !== 'production';
         return res.status(500).send({ 
             message: isDevelopment ? (err.message || "Failed to get verification status.") : "Failed to get verification status. Please try again." 
+        });
+    }
+};
+
+// Track profile view
+exports.trackProfileView = async (req, res) => {
+    try {
+        const profileId = req.params.id;
+        const viewerUserId = req.userId || null; // null for anonymous
+        const viewerIP = req.ip || req.connection.remoteAddress;
+        const userAgent = req.get('user-agent') || '';
+
+        // Don't track if viewing own profile
+        if (viewerUserId && viewerUserId.toString() === profileId) {
+            return res.status(200).json({ message: "View not tracked (own profile)" });
+        }
+
+        // Prevent duplicate views: Check if same user/IP viewed this profile in the last 5 minutes
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const duplicateQuery = {
+            profileUserId: profileId,
+            viewedAt: { $gte: fiveMinutesAgo }
+        };
+
+        if (viewerUserId) {
+            // For authenticated users, check by userId
+            duplicateQuery.viewerUserId = viewerUserId;
+        } else {
+            // For anonymous users, check by IP
+            duplicateQuery.viewerIP = viewerIP;
+            duplicateQuery.viewerUserId = null;
+        }
+
+        const recentView = await ProfileView.findOne(duplicateQuery);
+        if (recentView) {
+            return res.status(200).json({ message: "View not tracked (recent duplicate)" });
+        }
+
+        // Create view record
+        await ProfileView.create({
+            profileUserId: profileId,
+            viewerUserId: viewerUserId,
+            viewerIP: viewerIP,
+            userAgent: userAgent,
+            viewedAt: new Date()
+        });
+
+        return res.status(200).json({ message: "View tracked successfully" });
+    } catch (err) {
+        logger.error("Track profile view error:", err);
+        // Don't fail the request if tracking fails
+        return res.status(200).json({ message: "View tracking attempted" });
+    }
+};
+
+// Get profile analytics
+exports.getProfileAnalytics = async (req, res) => {
+    try {
+        const profileId = req.params.id;
+        const timeRange = req.query.timeRange || '7d';
+
+        // Verify user owns this profile
+        if (req.userId.toString() !== profileId) {
+            return res.status(403).send({ message: "You can only view your own analytics" });
+        }
+
+        // Calculate date range
+        let startDate;
+        const now = new Date();
+        switch (timeRange) {
+            case '7d':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case '30d':
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                break;
+            case '90d':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                break;
+            case 'all':
+            default:
+                startDate = null;
+                break;
+        }
+
+        // Build query
+        const query = { profileUserId: profileId };
+        if (startDate) {
+            query.viewedAt = { $gte: startDate };
+        }
+
+        // Get total page views
+        const pageViews = await ProfileView.countDocuments(query);
+
+        // Get unique visitors (distinct viewerUserId or viewerIP)
+        const uniqueVisitors = await ProfileView.distinct(
+            'viewerUserId',
+            { ...query, viewerUserId: { $ne: null } }
+        ).then(userIds => userIds.length).then(async (userCount) => {
+            const ipCount = await ProfileView.distinct(
+                'viewerIP',
+                { ...query, viewerUserId: null }
+            ).then(ips => ips.length);
+            return userCount + ipCount;
+        });
+
+        // Calculate previous period for comparison
+        let previousStartDate, previousEndDate;
+        if (startDate) {
+            const periodLength = now.getTime() - startDate.getTime();
+            previousEndDate = startDate;
+            previousStartDate = new Date(startDate.getTime() - periodLength);
+        } else {
+            // For "all time", compare last 30 days vs previous 30 days
+            previousEndDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            previousStartDate = new Date(previousEndDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        let pageViewsChange, uniqueVisitorsChange;
+        if (previousStartDate) {
+            const previousQuery = {
+                profileUserId: profileId,
+                viewedAt: { $gte: previousStartDate, $lt: previousEndDate }
+            };
+            const previousPageViews = await ProfileView.countDocuments(previousQuery);
+            const previousUniqueVisitors = await ProfileView.distinct(
+                'viewerUserId',
+                { ...previousQuery, viewerUserId: { $ne: null } }
+            ).then(userIds => userIds.length).then(async (userCount) => {
+                const ipCount = await ProfileView.distinct(
+                    'viewerIP',
+                    { ...previousQuery, viewerUserId: null }
+                ).then(ips => ips.length);
+                return userCount + ipCount;
+            });
+
+            pageViewsChange = previousPageViews > 0 
+                ? Math.round(((pageViews - previousPageViews) / previousPageViews) * 100)
+                : (pageViews > 0 ? 100 : 0);
+            uniqueVisitorsChange = previousUniqueVisitors > 0
+                ? Math.round(((uniqueVisitors - previousUniqueVisitors) / previousUniqueVisitors) * 100)
+                : (uniqueVisitors > 0 ? 100 : 0);
+        }
+
+        // Get interactions count (from interactions model)
+        const interactions = await db.interaction.countDocuments({
+            contact: { $exists: true },
+            // This would need to be linked to the profile owner's contacts
+            // For now, return 0 or implement proper linking
+        });
+
+        return res.status(200).json({
+            pageViews,
+            pageViewsChange,
+            uniqueVisitors,
+            uniqueVisitorsChange,
+            interactions: 0 // Placeholder - would need proper implementation
+        });
+    } catch (err) {
+        logger.error("Get profile analytics error:", err);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({
+            message: isDevelopment ? (err.message || "Failed to get analytics.") : "Failed to get analytics. Please try again."
         });
     }
 };

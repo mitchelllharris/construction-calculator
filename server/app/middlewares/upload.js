@@ -43,6 +43,22 @@ const portfolioStorage = multer.diskStorage({
     }
 });
 
+// Configure storage for post media (images and videos)
+const postStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const postDir = path.join(uploadsDir, 'posts');
+        if (!fs.existsSync(postDir)) {
+            fs.mkdirSync(postDir, { recursive: true });
+        }
+        cb(null, postDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = `${req.userId}-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `post-${uniqueSuffix}${ext}`);
+    }
+});
+
 // Configure storage for certification PDFs
 const certificationStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -65,17 +81,38 @@ const csvStorage = multer.memoryStorage();
 
 // File filter for images
 const imageFilter = (req, file, cb) => {
-    // Accept only image files
-    if (file.mimetype.startsWith('image/')) {
-        // Check if it's a valid image type
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-        if (allowedTypes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'), false);
-        }
+    // Allowed image MIME types
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    
+    // Allowed file extensions (case-insensitive)
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const fileExtension = require('path').extname(file.originalname).toLowerCase();
+    
+    // Check if MIME type is allowed OR if file extension is allowed (fallback for systems with incorrect MIME types)
+    const isValidMimeType = file.mimetype && allowedMimeTypes.includes(file.mimetype.toLowerCase());
+    const isValidExtension = allowedExtensions.includes(fileExtension);
+    const isImageMimeType = file.mimetype && file.mimetype.startsWith('image/');
+    
+    if (isValidMimeType || (isImageMimeType && isValidExtension)) {
+        cb(null, true);
     } else {
-        cb(new Error('File must be an image'), false);
+        cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'), false);
+    }
+};
+
+// File filter for videos
+const videoFilter = (req, file, cb) => {
+    const allowedMimeTypes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
+    const allowedExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mpeg'];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    
+    const isValidMimeType = file.mimetype && allowedMimeTypes.includes(file.mimetype.toLowerCase());
+    const isValidExtension = allowedExtensions.includes(fileExtension);
+    
+    if (isValidMimeType || isValidExtension) {
+        cb(null, true);
+    } else {
+        cb(new Error('Only MP4, MOV, AVI, WebM, and MPEG videos are allowed'), false);
     }
 };
 
@@ -137,6 +174,24 @@ const uploadCertificationPDF = multer({
     }
 }).single('pdf');
 
+// Post media upload middleware (images and videos)
+const uploadPostMedia = multer({
+    storage: postStorage,
+    fileFilter: (req, file, cb) => {
+        // Check if it's an image or video
+        if (file.mimetype.startsWith('image/')) {
+            imageFilter(req, file, cb);
+        } else if (file.mimetype.startsWith('video/')) {
+            videoFilter(req, file, cb);
+        } else {
+            cb(new Error('File must be an image or video'), false);
+        }
+    },
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB limit for post media
+    }
+}).array('media', 10); // Allow up to 10 files
+
 // CSV upload middleware
 const uploadCSV = multer({
     storage: csvStorage,
@@ -167,6 +222,7 @@ module.exports = {
     uploadAvatar: handleUploadError(uploadAvatar),
     uploadPortfolioImage: handleUploadError(uploadPortfolioImage),
     uploadCertificationPDF: handleUploadError(uploadCertificationPDF),
-    uploadCSV: handleUploadError(uploadCSV)
+    uploadCSV: handleUploadError(uploadCSV),
+    uploadPostMedia: handleUploadError(uploadPostMedia)
 };
 

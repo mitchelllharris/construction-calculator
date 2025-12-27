@@ -23,6 +23,14 @@ export const API_ENDPOINTS = {
   PROFILE: {
     GET_BY_USERNAME: (username) => `${API_BASE_URL}/api/profile/${username}`,
     GET_BY_ID: (id) => `${API_BASE_URL}/api/profile/id/${id}`,
+    ANALYTICS: (id, timeRange) => `${API_BASE_URL}/api/profile/${id}/analytics?timeRange=${timeRange}`,
+    TRACK_VIEW: (id) => `${API_BASE_URL}/api/profile/${id}/track-view`,
+    GET_POSTS: (id) => `${API_BASE_URL}/api/profile/${id}/posts`,
+  },
+  POSTS: {
+    CREATE: `${API_BASE_URL}/api/posts`,
+    DELETE: (id) => `${API_BASE_URL}/api/posts/${id}`,
+    UPLOAD_MEDIA: `${API_BASE_URL}/api/posts/upload-media`,
   },
   ADMIN: {
     USERS: `${API_BASE_URL}/api/admin/users`,

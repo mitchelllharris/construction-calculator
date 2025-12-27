@@ -128,6 +128,44 @@ const User = mongoose.model(
                 default: []
             }
         }],
+        education: [{
+            school: {
+                type: String,
+                required: true,
+                trim: true,
+                maxlength: 200
+            },
+            degree: {
+                type: String,
+                trim: true,
+                maxlength: 200
+            },
+            fieldOfStudy: {
+                type: String,
+                trim: true,
+                maxlength: 200
+            },
+            startDate: {
+                type: Date
+            },
+            endDate: {
+                type: Date
+            },
+            isCurrent: {
+                type: Boolean,
+                default: false
+            },
+            description: {
+                type: String,
+                trim: true,
+                maxlength: 2000
+            },
+            grade: {
+                type: String,
+                trim: true,
+                maxlength: 50
+            }
+        }],
         skills: {
             type: [String],
             default: []
@@ -241,6 +279,11 @@ const User = mongoose.model(
                 enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
                 default: 'public'
             },
+            education: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            },
             skills: {
                 type: String,
                 enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
@@ -287,6 +330,11 @@ const User = mongoose.model(
                 default: 'public'
             },
             yearsOfExperience: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            },
+            posts: {
                 type: String,
                 enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
                 default: 'public'

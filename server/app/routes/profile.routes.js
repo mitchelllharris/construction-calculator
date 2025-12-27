@@ -128,5 +128,18 @@ module.exports = function(app) {
         [authJwt.verifyToken],
         controller.getVerificationStatus
     );
+
+    // Track profile view (public endpoint, no auth required)
+    app.post(
+        "/api/profile/:id/track-view",
+        controller.trackProfileView
+    );
+
+    // Get profile analytics (owner only)
+    app.get(
+        "/api/profile/:id/analytics",
+        [authJwt.verifyToken],
+        controller.getProfileAnalytics
+    );
 };
 
