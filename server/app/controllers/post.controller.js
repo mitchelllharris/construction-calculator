@@ -14,13 +14,14 @@ exports.createPost = async (req, res) => {
             return res.status(400).send({ message: "Profile user ID is required" });
         }
 
-        // At least one of content, images, or videos must be provided
+        // At least one of content, images, videos, or poll must be provided
         const hasContent = content && content.trim();
         const hasImages = images && Array.isArray(images) && images.length > 0;
         const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
+        const hasPoll = poll && poll.options && Array.isArray(poll.options) && poll.options.length >= 2;
 
-        if (!hasContent && !hasImages && !hasVideos) {
-            return res.status(400).send({ message: "Post must contain at least text, images, or videos" });
+        if (!hasContent && !hasImages && !hasVideos && !hasPoll) {
+            return res.status(400).send({ message: "Post must contain at least text, images, videos, or a poll" });
         }
 
         // Check if profile user exists
@@ -67,12 +68,16 @@ exports.createPost = async (req, res) => {
             postData.taggedUsers = taggedUsers;
         }
 
+        // Create the post
+        // Note: Every post appears on the profile where it's posted (profileUserId)
+        // When fetching posts for a user's profile, we also include posts where they are the author
+        // This ensures posts appear on both the target profile and the author's profile
         const post = new Post(postData);
-
         await post.save();
 
-        // Populate author info
+        // Populate author and profile info
         await post.populate('authorUserId', 'firstName lastName username avatar');
+        await post.populate('profileUserId', 'firstName lastName username avatar');
 
         return res.status(201).send({
             message: "Post created successfully",
@@ -104,12 +109,18 @@ exports.getProfilePosts = async (req, res) => {
             return res.status(403).send({ message: "You don't have permission to view posts on this profile" });
         }
 
-        // Get posts
+        // Get posts that appear on this profile:
+        // 1. Posts where this user is the profile owner (profileUserId)
+        // 2. Posts where this user is the author (authorUserId) - their own posts
         const posts = await Post.find({
-            profileUserId,
+            $or: [
+                { profileUserId: profileUserId },
+                { authorUserId: profileUserId }
+            ],
             isDeleted: false
         })
         .populate('authorUserId', 'firstName lastName username avatar')
+        .populate('profileUserId', 'firstName lastName username avatar')
         .populate('likes.userId', 'firstName lastName username')
         .populate('comments.userId', 'firstName lastName username avatar')
         .sort({ createdAt: -1 })

@@ -20,8 +20,11 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@giphy/js-fetch-api": "^5.7.0",
+    "@giphy/react-components": "^10.1.1",
     "@tailwindcss/vite": "^4.1.17",
     "css": "^3.0.0",
+    "emoji-picker-react": "^4.16.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",

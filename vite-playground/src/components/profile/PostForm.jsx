@@ -1,12 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { 
-  MdImage, MdVideoLibrary, MdClose, MdSend, MdPeople, MdExpandMore, MdExpandLess,
-  MdLocationOn, MdPoll, MdTag, MdEmojiEmotions, MdGif
+  MdClose, MdSend, MdPeople, MdExpandMore, MdExpandLess,
+  MdLocationOn, MdPoll, MdTag, MdEmojiEmotions, MdGif, MdPhotoLibrary, MdSearch
 } from 'react-icons/md';
+import EmojiPicker from 'emoji-picker-react';
+import { Grid } from '@giphy/react-components';
+import { GiphyFetch } from '@giphy/js-fetch-api';
 import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
-import { useAuth } from '../../contexts/AuthContext';
 import Button from '../Button';
 
 export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = false }) {
@@ -22,13 +24,19 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
   const [showTagModal, setShowTagModal] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  const [gifSearchTerm, setGifSearchTerm] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollDuration, setPollDuration] = useState(1); // days
   const [location, setLocation] = useState(null);
   const [taggedUsers, setTaggedUsers] = useState([]);
   const fileInputRef = useRef(null);
+  
+  // Initialize GIPHY API
+  const giphyApiKey = import.meta.env.VITE_GIPHY_API_KEY || '';
+  const gf = useMemo(() => {
+    return giphyApiKey ? new GiphyFetch(giphyApiKey) : null;
+  }, [giphyApiKey]);
   const { showError, showSuccess } = useToast();
-  const { user: currentUser } = useAuth();
 
   const handleFileSelect = async (files) => {
     const fileArray = Array.from(files);
@@ -193,12 +201,39 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
     return option ? option.label : 'Everyone can reply';
   };
 
-  const insertEmoji = (emoji) => {
+  const insertEmoji = (emojiData) => {
+    const emoji = emojiData.emoji || emojiData;
     setContent(prev => prev + emoji);
     setShowEmojiPicker(false);
   };
 
-  const commonEmojis = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '❤️', '🔥', '💯', '🎉', '🙌'];
+  // GIPHY fetch functions
+  const fetchTrendingGifs = useCallback((offset) => {
+    if (!gf) return Promise.resolve({ data: [] });
+    return gf.trending({ offset, limit: 20 });
+  }, [gf]);
+
+  const fetchSearchGifs = useCallback((offset) => {
+    if (!gf || !gifSearchTerm.trim()) return fetchTrendingGifs(offset);
+    return gf.search(gifSearchTerm, { offset, limit: 20 });
+  }, [gf, gifSearchTerm, fetchTrendingGifs]);
+
+  const handleGifSelect = (gif, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // GIPHY returns GIF object with images property
+    const gifUrl = gif.images?.original?.url || gif.images?.downsized_large?.url || gif.images?.fixed_height?.url;
+    if (gifUrl) {
+      setImages(prev => [...prev, gifUrl]);
+      setShowGifPicker(false);
+      setGifSearchTerm('');
+      showSuccess('GIF added');
+    } else {
+      showError('Failed to get GIF URL');
+    }
+  };
 
   const handleAddPollOption = () => {
     if (pollOptions.length < 4) {
@@ -238,7 +273,7 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
             }
           });
         },
-        (error) => {
+        () => {
           showError('Unable to get your location');
         }
       );
@@ -315,22 +350,8 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
                 disabled={uploading || posting}
               />
               <div className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                <MdImage size={20} />
-                <span className="text-sm">Photo</span>
-              </div>
-            </label>
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                accept="video/*"
-                multiple
-                onChange={(e) => handleFileSelect(e.target.files)}
-                className="hidden"
-                disabled={uploading || posting}
-              />
-              <div className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                <MdVideoLibrary size={20} />
-                <span className="text-sm">Video</span>
+                <MdPhotoLibrary size={20} />
+                <span className="text-sm">Media</span>
               </div>
             </label>
             <button
@@ -434,19 +455,22 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
 
         {/* Emoji Picker */}
         {showEmojiPicker && (
-          <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex flex-wrap gap-2">
-              {commonEmojis.map((emoji, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={() => insertEmoji(emoji)}
-                  className="text-2xl hover:scale-125 transition-transform"
-                >
-                  {emoji}
-                </button>
-              ))}
+          <div className="mt-2 relative">
+            <div className="absolute bottom-full left-0 mb-2 z-20">
+              <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                <EmojiPicker
+                  onEmojiClick={(emojiData) => insertEmoji(emojiData)}
+                  width={350}
+                  height={400}
+                  previewConfig={{ showPreview: false }}
+                  skinTonesDisabled
+                />
+              </div>
             </div>
+            <div 
+              className="fixed inset-0 z-10" 
+              onClick={() => setShowEmojiPicker(false)}
+            />
           </div>
         )}
 
@@ -577,18 +601,58 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
 
         {/* GIF Picker */}
         {showGifPicker && (
-          <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Add GIF</h3>
-              <button
-                type="button"
-                onClick={() => setShowGifPicker(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <MdClose size={20} />
-              </button>
+          <div className="mt-3 relative">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-lg overflow-hidden">
+              <div className="flex items-center justify-between p-3 border-b border-gray-200">
+                <h3 className="font-semibold text-gray-900">Add GIF</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGifPicker(false);
+                    setGifSearchTerm('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <MdClose size={20} />
+                </button>
+              </div>
+              {!giphyApiKey ? (
+                <div className="p-4 text-center text-gray-500">
+                  <p className="mb-2">GIPHY API key not configured</p>
+                  <p className="text-sm">Please add VITE_GIPHY_API_KEY to your .env file</p>
+                </div>
+              ) : (
+                <>
+                  <div className="p-3 border-b border-gray-200">
+                    <div className="relative">
+                      <MdSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                      <input
+                        type="text"
+                        placeholder="Search GIFs..."
+                        value={gifSearchTerm}
+                        onChange={(e) => setGifSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto p-2">
+                    <Grid
+                      width={400}
+                      columns={2}
+                      fetchGifs={gifSearchTerm.trim() ? fetchSearchGifs : fetchTrendingGifs}
+                      onGifClick={handleGifSelect}
+                      key={gifSearchTerm}
+                      noLink={true}
+                    />
+                  </div>
+                  <div className="p-2 border-t border-gray-200 text-center">
+                    <p className="text-xs text-gray-500">
+                      Powered by <span className="font-semibold">GIPHY</span>
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
-            <p className="text-sm text-gray-500">GIF picker integration coming soon</p>
           </div>
         )}
       </form>
