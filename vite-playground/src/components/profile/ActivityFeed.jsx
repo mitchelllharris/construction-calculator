@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MdDelete, MdThumbUp, MdComment, MdMoreVert, MdChevronRight, MdCheckCircle } from 'react-icons/md';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MdDelete, MdThumbUp, MdComment, MdMoreVert, MdChevronRight, MdCheckCircle, MdChevronLeft, MdArrowBack } from 'react-icons/md';
 import { get, getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import ReactionPicker from './ReactionPicker';
+import MediaGallery from './MediaGallery';
+import CommentSection from './CommentSection';
+import PostView from './PostView';
 
 // Simple loading spinner component
 const LoadingSpinner = () => (
@@ -14,14 +18,17 @@ const LoadingSpinner = () => (
 export default function ActivityFeed({ profileId, isOwnProfile, username, showViewAll = true, limit = null }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState(null); // { type: 'post' | 'comment', postId, commentId?, post: {...} }
   const { user: currentUser } = useAuth();
   const { showError, showSuccess } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (profileId) {
       fetchPosts();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
   const fetchPosts = async () => {
@@ -75,6 +82,110 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
       }
     } catch (error) {
       showError(error.message || 'Failed to delete post');
+    }
+  };
+
+  const handleReaction = async (postId, reactionType) => {
+    if (!currentUser) {
+      showError('Please log in to react');
+      return;
+    }
+
+    try {
+      const token = getToken();
+      if (!token) {
+        showError('Please log in to react');
+        return;
+      }
+
+      // Optimistic update
+      const currentUserId = currentUser.id?.toString() || currentUser._id?.toString();
+      const postToUpdate = posts.find(p => {
+        const postIdStr = p._id?.toString() || p.id?.toString();
+        return postIdStr === postId.toString();
+      });
+
+      if (postToUpdate) {
+        const updatedLikes = [...(postToUpdate.likes || [])];
+        const existingReactionIndex = updatedLikes.findIndex(like => {
+          const likeUserId = like.userId?._id?.toString() || like.userId?.toString();
+          return likeUserId === currentUserId;
+        });
+
+        if (existingReactionIndex !== -1) {
+          const existingReaction = updatedLikes[existingReactionIndex];
+          if (existingReaction.reactionType === reactionType) {
+            // Remove reaction if clicking the same reaction
+            updatedLikes.splice(existingReactionIndex, 1);
+          } else {
+            // Update reaction type
+            updatedLikes[existingReactionIndex] = {
+              ...existingReaction,
+              reactionType
+            };
+          }
+        } else {
+          // Add new reaction
+          updatedLikes.push({
+            userId: currentUser,
+            reactionType,
+            reactedAt: new Date()
+          });
+        }
+
+        // Update state optimistically - preserve all post properties including comments
+        setPosts(prev => prev.map(post => {
+          const postIdStr = post._id?.toString() || post.id?.toString();
+          const updateIdStr = postId.toString();
+          if (postIdStr === updateIdStr) {
+            return { 
+              ...post, 
+              likes: updatedLikes,
+              // Preserve comments and all other properties
+              comments: post.comments,
+              replies: post.replies,
+              images: post.images,
+              videos: post.videos,
+              poll: post.poll
+            };
+          }
+          return post;
+        }));
+      }
+
+      const response = await fetch(API_ENDPOINTS.POSTS.REACT(postId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
+        body: JSON.stringify({ reactionType }),
+      });
+
+      if (!response.ok) {
+        // Revert on error
+        fetchPosts();
+        const error = await response.json().catch(() => ({ message: 'Failed to react' }));
+        throw new Error(error.message || 'Failed to react');
+      }
+
+      const data = await response.json();
+      
+      // Update with server response - merge to preserve existing comments if server doesn't return them
+      setPosts(prev => prev.map(post => {
+        const postIdStr = post._id?.toString() || post.id?.toString();
+        const updateIdStr = postId.toString();
+        if (postIdStr === updateIdStr) {
+          return {
+            ...data.post,
+            // Preserve comments if server response doesn't include them
+            comments: data.post.comments || post.comments
+          };
+        }
+        return post;
+      }));
+    } catch (error) {
+      showError(error.message || 'Failed to react');
     }
   };
 
@@ -157,12 +268,6 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
     return date.toLocaleDateString();
   };
 
-  const getImageUrl = (url) => {
-    return url.startsWith('http') 
-      ? url 
-      : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${url}`;
-  };
-
   const getAuthorName = (author) => {
     if (!author) return 'Unknown';
     if (author.firstName && author.lastName) {
@@ -180,6 +285,45 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
     }
     return null;
   };
+
+  const getCurrentUserReaction = (post) => {
+    if (!currentUser || !post.likes) return null;
+    const currentUserId = currentUser.id?.toString() || currentUser._id?.toString();
+    const reaction = post.likes.find(like => {
+      const likeUserId = like.userId?._id?.toString() || like.userId?.toString();
+      return likeUserId === currentUserId;
+    });
+    return reaction?.reactionType || null;
+  };
+
+  const handleNavigateToComment = async (action) => {
+    if (action.type === 'back') {
+      setCurrentView(null);
+    } else if (action.type === 'comment') {
+      try {
+        const token = getToken();
+        const response = await fetch(API_ENDPOINTS.POSTS.GET_THREAD(action.commentId), {
+          headers: {
+            'x-access-token': token || '',
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentView({
+            type: 'comment',
+            postId: action.postId,
+            commentId: action.commentId,
+            post: data.post
+          });
+        } else {
+          showError('Failed to load comment');
+        }
+      } catch {
+        showError('Failed to load comment');
+      }
+    }
+  };
+
 
   if (loading) {
     return (
@@ -226,6 +370,12 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
   // Determine if we should show horizontal scroll (when limit is set)
   const isHorizontal = limit !== null;
 
+  // If viewing a comment, navigate to post page instead of showing inline
+  if (currentView && currentView.type === 'comment') {
+    navigate(`/post/${currentView.commentId}`);
+    return null;
+  }
+
   return (
     <div className="bg-white shadow rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
@@ -243,319 +393,83 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
       {isHorizontal ? (
         <div className="overflow-x-auto -mx-6 px-6">
           <div className="flex gap-4 pb-4">
-            {posts.map((post) => {
-              const currentUserId = currentUser?.id?.toString() || currentUser?._id?.toString();
-              const authorId = post.authorUserId?._id?.toString() || post.authorUserId?.toString();
-              const postProfileId = post.profileUserId?._id?.toString() || post.profileUserId?.toString();
-              const canDelete = isOwnProfile || (currentUserId && (currentUserId === authorId || currentUserId === postProfileId));
-              
-              return (
-                <div 
-                  key={post._id} 
-                  className="border border-gray-200 rounded-lg p-4 flex-shrink-0 w-80"
-                >
-              {/* Post Header */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  {getAuthorAvatar(post.authorUserId) ? (
-                    <img
-                      src={getAuthorAvatar(post.authorUserId)}
-                      alt={getAuthorName(post.authorUserId)}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-                      {getAuthorName(post.authorUserId).charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-semibold text-gray-900">{getAuthorName(post.authorUserId)}</p>
-                    <p className="text-xs text-gray-500">{formatDate(post.createdAt)}</p>
-                  </div>
-                </div>
-                {canDelete && (
-                  <button
-                    onClick={() => handleDeletePost(post._id)}
-                    className="text-gray-400 hover:text-red-600 transition-colors"
-                    title="Delete post"
-                  >
-                    <MdDelete size={20} />
-                  </button>
-                )}
+            {posts.map((post) => (
+              <div key={post._id} className="shrink-0 w-80">
+                <PostView
+                  post={post}
+                  currentUser={currentUser}
+                  isOwnProfile={isOwnProfile}
+                  onDelete={handleDeletePost}
+                  onReaction={handleReaction}
+                  onVote={handleVote}
+                  onUpdate={(updatedPost) => {
+                    setPosts(prev => prev.map(p => {
+                      const postIdStr = p._id?.toString() || p.id?.toString();
+                      const updateIdStr = updatedPost._id?.toString() || updatedPost.id?.toString();
+                      return postIdStr === updateIdStr ? updatedPost : p;
+                    }));
+                  }}
+                  onNavigateToComment={(action) => {
+                    handleNavigateToComment({ ...action, postId: post._id });
+                  }}
+                  onNavigateToPost={(postId) => {
+                    navigate(`/post/${postId}`, { 
+                      state: { from: location.pathname } 
+                    });
+                  }}
+                  showComments={false}
+                  navigationStack={[]}
+                  getAuthorName={getAuthorName}
+                  getAuthorAvatar={getAuthorAvatar}
+                  getCurrentUserReaction={getCurrentUserReaction}
+                  getPollResults={getPollResults}
+                  getUserVote={getUserVote}
+                  isPollEnded={isPollEnded}
+                  formatDate={formatDate}
+                />
               </div>
-
-              {/* Post Content */}
-              {post.content && (
-                <p className="text-gray-700 mb-3 whitespace-pre-wrap">{post.content}</p>
-              )}
-
-              {/* Post Images */}
-              {post.images && post.images.length > 0 && (
-                <div className={`grid gap-2 mb-3 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                  {post.images.map((imageUrl, index) => (
-                    <img
-                      key={index}
-                      src={getImageUrl(imageUrl)}
-                      alt={`Post image ${index + 1}`}
-                      className={`w-full rounded-lg object-cover ${isHorizontal ? 'max-h-48' : 'max-h-96'}`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Post Videos */}
-              {post.videos && post.videos.length > 0 && (
-                <div className="space-y-2 mb-3">
-                  {post.videos.map((videoUrl, index) => (
-                    <video
-                      key={index}
-                      src={getImageUrl(videoUrl)}
-                      controls
-                      className={`w-full rounded-lg ${isHorizontal ? 'max-h-48' : 'max-h-96'}`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Poll */}
-              {post.poll && post.poll.options && post.poll.options.length > 0 && (
-                <div className="mb-3">
-                  <div className="space-y-2">
-                    {post.poll.options.map((option, index) => {
-                      const results = getPollResults(post.poll);
-                      const userVote = getUserVote(post.poll);
-                      const pollEnded = isPollEnded(post.poll);
-                      const isSelected = userVote === index;
-                      const result = results[index] || { count: 0, percentage: 0 };
-                      const totalVotes = post.poll.votes?.length || 0;
-
-                      return (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => !pollEnded && handleVote(post._id, index)}
-                          disabled={pollEnded}
-                          className={`w-full text-left p-2 rounded-lg border-2 transition-all ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300 bg-gray-50'
-                          } ${pollEnded ? 'cursor-default' : 'cursor-pointer'}`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-gray-900">{option}</span>
-                            {isSelected && (
-                              <MdCheckCircle className="text-blue-500" size={16} />
-                            )}
-                          </div>
-                          {totalVotes > 0 && (
-                            <div className="mt-1">
-                              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                                <span>{result.count}</span>
-                                <span>{result.percentage.toFixed(0)}%</span>
-                              </div>
-                              <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                <div
-                                  className="bg-blue-500 h-1.5 rounded-full transition-all"
-                                  style={{ width: `${result.percentage}%` }}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {(() => {
-                      const totalVotes = post.poll.votes?.length || 0;
-                      const pollEnded = isPollEnded(post.poll);
-                      if (pollEnded) {
-                        return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
-                      }
-                      return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* Post Actions */}
-              <div className="flex items-center gap-4 pt-3 border-t border-gray-200">
-                <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                  <MdThumbUp size={20} />
-                  <span className="text-sm">Like ({post.likes?.length || 0})</span>
-                </button>
-                <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                  <MdComment size={20} />
-                  <span className="text-sm">Comment ({post.comments?.length || 0})</span>
-                </button>
-              </div>
-            </div>
-            );
-            })}
+            ))}
           </div>
         </div>
       ) : (
         <div className="space-y-4">
-          {posts.map((post) => {
-            const canDelete = isOwnProfile || (currentUser && currentUser.id === post.authorUserId?._id);
-            
-            return (
-              <div key={post._id} className="border border-gray-200 rounded-lg p-4">
-                {/* Post Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    {getAuthorAvatar(post.authorUserId) ? (
-                      <img
-                        src={getAuthorAvatar(post.authorUserId)}
-                        alt={getAuthorName(post.authorUserId)}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-                        {getAuthorName(post.authorUserId).charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-semibold text-gray-900">{getAuthorName(post.authorUserId)}</p>
-                      <p className="text-xs text-gray-500">{formatDate(post.createdAt)}</p>
-                    </div>
-                  </div>
-                  {canDelete && (
-                    <button
-                      onClick={() => handleDeletePost(post._id)}
-                      className="text-gray-400 hover:text-red-600 transition-colors"
-                      title="Delete post"
-                    >
-                      <MdDelete size={20} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Post Content */}
-                {post.content && (
-                  <p className="text-gray-700 mb-3 whitespace-pre-wrap">{post.content}</p>
-                )}
-
-                {/* Post Images */}
-                {post.images && post.images.length > 0 && (
-                  <div className={`grid gap-2 mb-3 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    {post.images.map((imageUrl, index) => (
-                      <img
-                        key={index}
-                        src={getImageUrl(imageUrl)}
-                        alt={`Post image ${index + 1}`}
-                        className="w-full rounded-lg object-cover max-h-96"
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Post Videos */}
-                {post.videos && post.videos.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {post.videos.map((videoUrl, index) => (
-                      <video
-                        key={index}
-                        src={getImageUrl(videoUrl)}
-                        controls
-                        className="w-full rounded-lg max-h-96"
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Poll */}
-                {post.poll && post.poll.options && post.poll.options.length > 0 && (
-                  <div className="mb-3">
-                    <div className="space-y-2">
-                      {post.poll.options.map((option, index) => {
-                        const results = getPollResults(post.poll);
-                        const userVote = getUserVote(post.poll);
-                        const pollEnded = isPollEnded(post.poll);
-                        const isSelected = userVote === index;
-                        const result = results[index] || { count: 0, percentage: 0 };
-                        const totalVotes = post.poll.votes?.length || 0;
-
-                        return (
-                          <button
-                            key={index}
-                            type="button"
-                            onClick={() => !pollEnded && handleVote(post._id, index)}
-                            disabled={pollEnded}
-                            className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
-                              isSelected
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-gray-200 hover:border-gray-300 bg-gray-50'
-                            } ${pollEnded ? 'cursor-default' : 'cursor-pointer'}`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-gray-900">{option}</span>
-                              {isSelected && (
-                                <MdCheckCircle className="text-blue-500" size={20} />
-                              )}
-                            </div>
-                            {totalVotes > 0 && (
-                              <div className="mt-2">
-                                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                                  <span>{result.count} {result.count === 1 ? 'vote' : 'votes'}</span>
-                                  <span>{result.percentage.toFixed(1)}%</span>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                  <div
-                                    className="bg-blue-500 h-2 rounded-full transition-all"
-                                    style={{ width: `${result.percentage}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      {(() => {
-                        const totalVotes = post.poll.votes?.length || 0;
-                        const pollEnded = isPollEnded(post.poll);
-                        if (pollEnded) {
-                          return `Poll ended • ${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
-                        }
-                        if (post.poll.endsAt) {
-                          const endsAt = new Date(post.poll.endsAt);
-                          const now = new Date();
-                          const diffMs = endsAt - now;
-                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                          const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                          if (diffDays > 0) {
-                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • ${diffDays} ${diffDays === 1 ? 'day' : 'days'} left`;
-                          } else if (diffHours > 0) {
-                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} left`;
-                          } else {
-                            return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'} • Ending soon`;
-                          }
-                        }
-                        return `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`;
-                      })()}
-                    </div>
-                  </div>
-                )}
-
-                {/* Post Actions */}
-                <div className="flex items-center gap-4 pt-3 border-t border-gray-200">
-                  <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                    <MdThumbUp size={20} />
-                    <span className="text-sm">Like ({post.likes?.length || 0})</span>
-                  </button>
-                  <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors">
-                    <MdComment size={20} />
-                    <span className="text-sm">Comment ({post.comments?.length || 0})</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {posts.map((post) => (
+            <PostView
+                key={post._id} 
+              post={post}
+              currentUser={currentUser}
+              isOwnProfile={isOwnProfile}
+              onDelete={handleDeletePost}
+              onReaction={handleReaction}
+              onVote={handleVote}
+              onUpdate={(updatedPost) => {
+            setPosts(prev => prev.map(p => {
+              const postIdStr = p._id?.toString() || p.id?.toString();
+              const updateIdStr = updatedPost._id?.toString() || updatedPost.id?.toString();
+              return postIdStr === updateIdStr ? updatedPost : p;
+            }));
+          }}
+              onNavigateToComment={(action) => {
+                handleNavigateToComment({ ...action, postId: post._id });
+              }}
+                  onNavigateToPost={(postId) => {
+                    navigate(`/post/${postId}`, { 
+                      state: { from: location.pathname } 
+                    });
+                  }}
+                  showComments={false}
+                  navigationStack={[]}
+                  getAuthorName={getAuthorName}
+              getAuthorAvatar={getAuthorAvatar}
+              getCurrentUserReaction={getCurrentUserReaction}
+              getPollResults={getPollResults}
+              getUserVote={getUserVote}
+              isPollEnded={isPollEnded}
+              formatDate={formatDate}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 }
-

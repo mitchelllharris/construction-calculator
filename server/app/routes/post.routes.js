@@ -36,12 +36,51 @@ module.exports = function(app) {
         controller.uploadPostMedia
     );
 
+    // React to a post
+    app.post(
+        "/api/posts/:postId/react",
+        apiLimiter,
+        [authJwt.verifyToken],
+        controller.reactToPost
+    );
+
     // Vote on a poll
     app.post(
         "/api/posts/:postId/vote",
         apiLimiter,
         [authJwt.verifyToken],
         controller.voteOnPoll
+    );
+
+    // Get a post with its full comment thread
+    app.get(
+        "/api/posts/:id/thread",
+        [authJwt.verifyTokenOptional],
+        controller.getPostWithThread
+    );
+
+    // Add a comment to a post
+    app.post(
+        "/api/posts/:postId/comments",
+        apiLimiter,
+        [authJwt.verifyToken],
+        controller.addComment
+    );
+
+    // Add a reply to a comment
+    app.post(
+        "/api/posts/:postId/comments/:commentId/replies",
+        apiLimiter,
+        [authJwt.verifyToken],
+        controller.addReply
+    );
+
+    // React to a comment or reply (comments/replies are now Posts, so use commentId as postId)
+    app.post(
+        "/api/posts/:commentId/react",
+        apiLimiter,
+        [authJwt.verifyToken],
+        controller.reactToComment
     );
 };
 

@@ -31,7 +31,12 @@ export const API_ENDPOINTS = {
     CREATE: `${API_BASE_URL}/api/posts`,
     DELETE: (id) => `${API_BASE_URL}/api/posts/${id}`,
     UPLOAD_MEDIA: `${API_BASE_URL}/api/posts/upload-media`,
+    REACT: (postId) => `${API_BASE_URL}/api/posts/${postId}/react`,
     VOTE: (postId) => `${API_BASE_URL}/api/posts/${postId}/vote`,
+    GET_THREAD: (postId) => `${API_BASE_URL}/api/posts/${postId}/thread`,
+    ADD_COMMENT: (postId) => `${API_BASE_URL}/api/posts/${postId}/comments`,
+    ADD_REPLY: (postId, commentId) => `${API_BASE_URL}/api/posts/${postId}/comments/${commentId}/replies`,
+    REACT_TO_COMMENT: (commentId) => `${API_BASE_URL}/api/posts/${commentId}/react`,
   },
   ADMIN: {
     USERS: `${API_BASE_URL}/api/admin/users`,

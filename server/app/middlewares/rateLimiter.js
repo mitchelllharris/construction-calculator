@@ -1,14 +1,20 @@
 const rateLimit = require('express-rate-limit');
 
 // Rate limiter for login attempts (stricter)
+// More lenient in development mode
+const isDevelopment = process.env.NODE_ENV !== 'production';
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // Limit each IP to 5 login requests per windowMs
+    max: isDevelopment ? 20 : 5, // More attempts allowed in development
     message: {
         message: 'Too many login attempts from this IP, please try again after 15 minutes.'
     },
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    skip: (req) => {
+        // Skip rate limiting for localhost in development
+        return isDevelopment && (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1');
+    }
 });
 
 // Rate limiter for signup attempts

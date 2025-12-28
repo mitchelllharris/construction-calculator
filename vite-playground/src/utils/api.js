@@ -66,16 +66,26 @@ const apiRequest = async (url, options = {}) => {
       // Handle specific HTTP status codes
       let errorMessage = data?.message || data?.error || 'An error occurred';
       
+      // Check if this is a login/signup endpoint - don't override messages for these
+      const isAuthEndpoint = url.includes('/api/auth/signin') || url.includes('/api/auth/signup');
+      
       if (response.status === 401) {
-        errorMessage = 'Your session has expired. Please log in again.';
-        // Optionally clear token and redirect to login
-        removeToken();
+        // For auth endpoints, use server message; for others, it's session expiration
+        if (!isAuthEndpoint) {
+          errorMessage = 'Your session has expired. Please log in again.';
+          // Only clear token for non-auth endpoints (actual session expiration)
+          removeToken();
+        }
+        // For auth endpoints, keep the server's message (e.g., "Invalid username or password")
       } else if (response.status === 403) {
-        errorMessage = 'You do not have permission to perform this action.';
+        errorMessage = data?.message || 'You do not have permission to perform this action.';
       } else if (response.status === 404) {
         errorMessage = 'The requested resource was not found.';
+      } else if (response.status === 423) {
+        // Account locked
+        errorMessage = data?.message || 'Account is locked. Please try again later.';
       } else if (response.status === 429) {
-        errorMessage = 'Too many requests. Please try again later.';
+        errorMessage = data?.message || 'Too many requests. Please try again later.';
       } else if (response.status >= 500) {
         errorMessage = 'Server error. Please try again later.';
       }

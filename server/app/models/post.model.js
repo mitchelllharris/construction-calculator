@@ -36,32 +36,33 @@ const Post = mongoose.model(
                 ref: 'User',
                 required: true
             },
+            reactionType: {
+                type: String,
+                enum: ['like', 'love', 'care', 'haha', 'wow', 'sad', 'angry'],
+                default: 'like'
+            },
             likedAt: {
                 type: Date,
                 default: Date.now
             }
         }],
-        comments: [{
-            userId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'User',
-                required: true
-            },
-            content: {
-                type: String,
-                required: true,
-                trim: true,
-                maxlength: 1000
-            },
-            commentedAt: {
-                type: Date,
-                default: Date.now
-            }
-        }],
+        parentPostId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Post',
+            default: null,
+            index: true
+        },
+        parentCommentId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Post',
+            default: null,
+            index: true
+        },
         replySettings: {
             type: String,
             enum: ['everyone', 'following', 'verified', 'mentioned', 'contacts_only', 'contacts_of_contacts', 'page_owner'],
-            default: 'everyone'
+            default: 'everyone',
+            required: false
         },
         poll: {
             options: [{
