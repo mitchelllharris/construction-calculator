@@ -47,13 +47,13 @@ const Post = mongoose.model(
             }
         }],
         parentPostId: {
-            type: mongoose.Schema.Types.ObjectId,
+                type: mongoose.Schema.Types.ObjectId,
             ref: 'Post',
             default: null,
             index: true
-        },
+            },
         parentCommentId: {
-            type: mongoose.Schema.Types.ObjectId,
+                    type: mongoose.Schema.Types.ObjectId,
             ref: 'Post',
             default: null,
             index: true
@@ -92,9 +92,17 @@ const Post = mongoose.model(
             }
         },
         location: {
+            // Simple format
             name: {
                 type: String,
-                trim: true
+                trim: true,
+                maxlength: 200
+            },
+            // Full address format (Google Maps)
+            formattedAddress: {
+                type: String,
+                trim: true,
+                maxlength: 500
             },
             coordinates: {
                 lat: {
@@ -103,6 +111,30 @@ const Post = mongoose.model(
                 lng: {
                     type: Number
                 }
+            },
+            city: {
+                type: String,
+                trim: true,
+                maxlength: 100
+            },
+            state: {
+                type: String,
+                trim: true,
+                maxlength: 100
+            },
+            country: {
+                type: String,
+                trim: true,
+                maxlength: 100
+            },
+            postalCode: {
+                type: String,
+                trim: true,
+                maxlength: 20
+            },
+            placeId: {
+                type: String,
+                trim: true
             }
         },
         taggedUsers: [{

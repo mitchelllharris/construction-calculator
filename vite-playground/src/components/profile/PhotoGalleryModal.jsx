@@ -67,13 +67,23 @@ export default function PhotoGalleryModal({ isOpen, onClose, images = [], initia
         </button>
       )}
 
-      {/* Image Container */}
+      {/* Media Container */}
       <div className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center p-4">
-        <img
-          src={fullUrl}
-          alt={`Photo ${currentIndex + 1} of ${images.length}`}
-          className="max-w-full max-h-full object-contain"
-        />
+        {currentImage.isVideo ? (
+          <video
+            src={fullUrl}
+            controls
+            className="max-w-full max-h-full"
+          >
+            Your browser does not support the video tag.
+          </video>
+        ) : (
+          <img
+            src={fullUrl}
+            alt={`Photo ${currentIndex + 1} of ${images.length}`}
+            className="max-w-full max-h-full object-contain"
+          />
+        )}
       </div>
 
       {/* Next Button */}
@@ -87,12 +97,27 @@ export default function PhotoGalleryModal({ isOpen, onClose, images = [], initia
         </button>
       )}
 
-      {/* Image Counter */}
-      {images.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 rounded-full px-4 py-2 text-sm">
-          {currentIndex + 1} / {images.length}
-        </div>
-      )}
+      {/* Image Info */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2">
+        {/* Image Counter */}
+        {images.length > 1 && (
+          <div className="text-white bg-black bg-opacity-50 rounded-full px-4 py-2 text-sm">
+            {currentIndex + 1} / {images.length}
+          </div>
+        )}
+        
+        {/* Upload Info */}
+        {currentImage.uploadedByUser && (
+          <div className="text-white bg-black bg-opacity-50 rounded-full px-4 py-2 text-sm">
+            by {currentImage.uploadedByUser.username || currentImage.uploadedByUser.firstName || 'User'}
+          </div>
+        )}
+        {currentImage.uploadedBy === 'owner' && !currentImage.uploadedByUser && (
+          <div className="text-white bg-black bg-opacity-50 rounded-full px-4 py-2 text-sm">
+            by owner
+          </div>
+        )}
+      </div>
 
       {/* Thumbnail Strip (optional, can be added later) */}
     </div>

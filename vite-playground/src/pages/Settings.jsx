@@ -8,6 +8,7 @@ import Input from '../components/Input';
 import PhoneInput from '../components/PhoneInput';
 import WebsiteInput from '../components/WebsiteInput';
 import TagInput from '../components/TagInput';
+import LocationInput from '../components/LocationInput';
 import Button from '../components/Button';
 import SkeletonCard from '../components/SkeletonCard';
 import Spinner from '../components/Spinner';
@@ -507,26 +508,13 @@ export default function Settings() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Location
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Input
-                    type="text"
-                    value={tradieData.location?.city || ''}
-                    onChange={(e) => setTradieData({ ...tradieData, location: { ...tradieData.location, city: e.target.value } })}
-                    placeholder="City"
-                  />
-                  <Input
-                    type="text"
-                    value={tradieData.location?.state || ''}
-                    onChange={(e) => setTradieData({ ...tradieData, location: { ...tradieData.location, state: e.target.value } })}
-                    placeholder="State"
-                  />
-                  <Input
-                    type="text"
-                    value={tradieData.location?.country || ''}
-                    onChange={(e) => setTradieData({ ...tradieData, location: { ...tradieData.location, country: e.target.value } })}
-                    placeholder="Country"
-                  />
-                </div>
+                <LocationInput
+                  value={tradieData.location}
+                  onChange={(location) => setTradieData({ ...tradieData, location })}
+                  placeholder="Search for your location..."
+                  format="simple"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
 
               <div className="mt-4">

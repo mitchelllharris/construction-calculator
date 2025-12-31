@@ -28,4 +28,7 @@ module.exports = function(app) {
 
     // Token verification endpoint
     app.get("/api/auth/verify", [authJwt.verifyToken], controller.verifyToken);
+
+    // Search users (people and businesses)
+    app.get("/api/users/search", [authJwt.verifyToken], controller.searchUsers);
 };

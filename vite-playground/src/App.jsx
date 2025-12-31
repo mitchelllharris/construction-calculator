@@ -20,6 +20,7 @@ import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Settings from './pages/Settings.jsx'
 import Clients from './pages/Clients.jsx'
+import FindPeople from './pages/FindPeople.jsx'
 import VerifyEmail from './pages/VerifyEmail.jsx'
 import ResendVerification from './pages/ResendVerification.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
@@ -89,6 +90,14 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <Clients />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/find-people" 
+            element={
+              <ProtectedRoute>
+                <FindPeople />
               </ProtectedRoute>
             }
           />

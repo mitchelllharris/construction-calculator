@@ -258,7 +258,7 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
         showError('Please log in to reply');
         return;
       }
-      
+
       const response = await fetch(API_ENDPOINTS.POSTS.ADD_REPLY(post._id, parentCommentId), {
         method: 'POST',
         headers: {
@@ -315,8 +315,8 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
                   ...existingReaction,
                   reactionType
                 };
-              }
-            } else {
+        }
+      } else {
               // Add new reaction
               updatedLikes.push({
                 userId: currentUser,
@@ -387,8 +387,8 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
         if (onUpdate) onUpdate(threadData.post);
       } else {
         // Fallback to just the response data
-        const data = await response.json();
-        if (onUpdate) onUpdate(data.post);
+      const data = await response.json();
+      if (onUpdate) onUpdate(data.post);
       }
     } catch (error) {
       showError(error.message || 'Failed to react');
@@ -444,23 +444,23 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
         <div className="p-4">
           <div className="flex gap-3">
             {getAuthorAvatar(item.userId) ? (
-              <img
+                  <img
                 src={getAuthorAvatar(item.userId)}
                 alt={getAuthorName(item.userId)}
                 className="w-12 h-12 rounded-full object-cover shrink-0"
-              />
-            ) : (
+                  />
+                ) : (
               <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold shrink-0">
                 {getAuthorName(item.userId).charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <p className="font-bold text-gray-900">{getAuthorName(item.authorUserId || item.userId)}</p>
                 <p className="text-sm text-gray-500">@{(item.authorUserId || item.userId)?.username || 'user'}</p>
                 <span className="text-gray-500">·</span>
                 <p className="text-sm text-gray-500">{formatDate(item.createdAt || item.commentedAt || item.repliedAt)}</p>
-              </div>
+                    </div>
               <p className="text-gray-900 mb-3 whitespace-pre-wrap wrap-break-word">{item.content}</p>
               
               <div className="flex items-center gap-6 text-gray-500">
@@ -484,54 +484,54 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
                   <span className="text-sm">0</span>
                 </button>
                 <div className="flex items-center gap-2">
-                  <ReactionPicker
+                    <ReactionPicker
                     onReactionSelect={(reactionType) => {
                       handleReactToComment(item._id, reactionType);
                     }}
-                    currentReaction={currentReaction}
+                      currentReaction={currentReaction}
                     className="text-sm"
-                  />
+                    />
                   <span className="text-sm">{reactions.length || ''}</span>
                 </div>
-                <button
+                      <button
                   onClick={(e) => {
                     e.stopPropagation();
-                  }}
+                        }}
                   className="flex items-center gap-2 hover:text-blue-600 transition-colors"
-                >
+                      >
                   <MdBookmarkBorder size={18} />
-                </button>
-              </div>
+                      </button>
+                  </div>
 
               {isReplying && (
                 <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="text"
+                      <input
+                        type="text"
                     placeholder="Post your reply"
                     value={replyContent}
                     onChange={(e) => setReplyContent(e.target.value)}
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
                         handleAddReply(item._id);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      setReplyingTo(null);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          setReplyingTo(null);
                       setReplyContent('');
-                    }}
+                        }}
                     className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-full"
-                  >
-                    Cancel
-                  </button>
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        </div>
       </div>
     );
   };
@@ -554,11 +554,11 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
           <div className="grid grid-cols-3 gap-2 mt-3">
             {images.map((imageUrl, index) => (
               <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-gray-200">
-                <img
+          <img
                   src={getImageUrl(imageUrl)}
                   alt={`Preview ${index + 1}`}
                   className="w-full h-full object-cover"
-                />
+          />
                 <button
                   type="button"
                   onClick={() => handleRemoveImage(index)}
@@ -596,7 +596,7 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
           <div className="flex items-center gap-2">
             <label className="cursor-pointer">
-              <input
+          <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*,video/*"
@@ -649,17 +649,17 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
             {uploading && (
               <span className="text-sm text-gray-500">Uploading...</span>
             )}
-          </div>
-          <button
+        </div>
+        <button
             type="button"
-            onClick={handleAddComment}
+          onClick={handleAddComment}
             disabled={uploading || (!newComment.trim() && images.length === 0 && videos.length === 0 && !(showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2))}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-2"
-          >
+        >
             <MdSend size={18} />
             <span>Post</span>
-          </button>
-        </div>
+        </button>
+      </div>
 
         {/* Emoji Picker */}
         {showEmojiPicker && (
@@ -679,8 +679,8 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
               className="fixed inset-0 z-10" 
               onClick={() => setShowEmojiPicker(false)}
             />
-          </div>
-        )}
+                    </div>
+                  )}
 
         {/* Poll Modal */}
         {showPollModal && (
@@ -697,7 +697,7 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
               >
                 <MdClose size={20} />
               </button>
-            </div>
+                    </div>
             <div className="space-y-2 mb-3">
               {pollOptions.map((option, index) => (
                 <div key={index} className="flex items-center gap-2">
@@ -709,26 +709,26 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {pollOptions.length > 2 && (
-                    <button
+                      <button
                       type="button"
                       onClick={() => handleRemovePollOption(index)}
                       className="text-red-500 hover:text-red-700"
-                    >
+                      >
                       <MdClose size={20} />
-                    </button>
+                      </button>
                   )}
                 </div>
               ))}
             </div>
             {pollOptions.length < 4 && (
-              <button
+                        <button
                 type="button"
                 onClick={handleAddPollOption}
                 className="text-sm text-blue-600 hover:text-blue-800 mb-3"
-              >
+                        >
                 + Add option
-              </button>
-            )}
+                        </button>
+                      )}
             <div className="flex items-center gap-2">
               <label className="text-sm text-gray-600">Duration:</label>
               <select
@@ -758,9 +758,9 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
               >
                 <MdClose size={20} />
               </button>
-            </div>
-            <input
-              type="text"
+                    </div>
+                        <input
+                          type="text"
               placeholder="Search for people to tag..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
             />
@@ -774,17 +774,17 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
             <div className="bg-white rounded-lg border border-gray-200 shadow-lg overflow-hidden">
               <div className="flex items-center justify-between p-3 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">Add GIF</h3>
-                <button
+                        <button
                   type="button"
-                  onClick={() => {
+                          onClick={() => {
                     setShowGifPicker(false);
                     setGifSearchTerm('');
-                  }}
+                          }}
                   className="text-gray-400 hover:text-gray-600"
-                >
+                        >
                   <MdClose size={20} />
-                </button>
-              </div>
+                        </button>
+                      </div>
               {!giphyApiKey ? (
                 <div className="p-4 text-center text-gray-500">
                   <p className="mb-2">GIPHY API key not configured</p>
@@ -821,8 +821,8 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
                   </div>
                 </>
               )}
-            </div>
-          </div>
+                </div>
+              </div>
         )}
       </div>
 

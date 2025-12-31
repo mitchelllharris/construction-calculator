@@ -22,6 +22,7 @@
   "dependencies": {
     "@giphy/js-fetch-api": "^5.7.0",
     "@giphy/react-components": "^10.1.1",
+    "@react-google-maps/api": "^2.20.8",
     "@tailwindcss/vite": "^4.1.17",
     "css": "^3.0.0",
     "emoji-picker-react": "^4.16.1",

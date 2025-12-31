@@ -58,6 +58,10 @@ const User = mongoose.model(
             trim: true,
             maxlength: 2000
         },
+        bioImage: {
+            type: String,
+            trim: true
+        },
         phone: {
             type: String,
             trim: true,
@@ -69,6 +73,7 @@ const User = mongoose.model(
             maxlength: 200
         },
         location: {
+            // Simple format (backward compatible)
             city: {
                 type: String,
                 trim: true,
@@ -83,6 +88,34 @@ const User = mongoose.model(
                 type: String,
                 trim: true,
                 maxlength: 100
+            },
+            // Full address format (Google Maps)
+            formattedAddress: {
+                type: String,
+                trim: true,
+                maxlength: 500
+            },
+            name: {
+                type: String,
+                trim: true,
+                maxlength: 200
+            },
+            coordinates: {
+                lat: {
+                    type: Number
+                },
+                lng: {
+                    type: Number
+                }
+            },
+            postalCode: {
+                type: String,
+                trim: true,
+                maxlength: 20
+            },
+            placeId: {
+                type: String,
+                trim: true
             }
         },
         yearsOfExperience: {

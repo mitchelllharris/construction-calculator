@@ -58,13 +58,13 @@ exports.createPost = async (req, res) => {
             }
         } else {
             // For top-level posts, at least one of content, images, videos, or poll must be provided
-            const hasContent = content && content.trim();
-            const hasImages = images && Array.isArray(images) && images.length > 0;
-            const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
-            const hasPoll = poll && poll.options && Array.isArray(poll.options) && poll.options.length >= 2;
+        const hasContent = content && content.trim();
+        const hasImages = images && Array.isArray(images) && images.length > 0;
+        const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
+        const hasPoll = poll && poll.options && Array.isArray(poll.options) && poll.options.length >= 2;
 
-            if (!hasContent && !hasImages && !hasVideos && !hasPoll) {
-                return res.status(400).send({ message: "Post must contain at least text, images, videos, or a poll" });
+        if (!hasContent && !hasImages && !hasVideos && !hasPoll) {
+            return res.status(400).send({ message: "Post must contain at least text, images, videos, or a poll" });
             }
         }
 
@@ -119,23 +119,23 @@ exports.createPost = async (req, res) => {
         if (!parentPostId && !parentCommentId) {
             postData.replySettings = replySettings || 'everyone';
             
-            if (poll && poll.options && poll.options.length >= 2) {
-                const endsAt = new Date();
-                endsAt.setDate(endsAt.getDate() + (poll.duration || 1));
-                postData.poll = {
-                    options: poll.options,
-                    votes: [],
-                    duration: poll.duration || 1,
-                    endsAt: endsAt
-                };
-            }
+        if (poll && poll.options && poll.options.length >= 2) {
+            const endsAt = new Date();
+            endsAt.setDate(endsAt.getDate() + (poll.duration || 1));
+            postData.poll = {
+                options: poll.options,
+                votes: [],
+                duration: poll.duration || 1,
+                endsAt: endsAt
+            };
+        }
 
-            if (location && location.name) {
-                postData.location = location;
-            }
+        if (location && location.name) {
+            postData.location = location;
+        }
 
-            if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 0) {
-                postData.taggedUsers = taggedUsers;
+        if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 0) {
+            postData.taggedUsers = taggedUsers;
             }
         }
 
@@ -179,13 +179,11 @@ exports.getProfilePosts = async (req, res) => {
         }
 
         // Get top-level posts (no parentPostId or parentCommentId)
+        // Only show posts that were posted ON this profile, not posts created BY this user
         const posts = await Post.find({
             $and: [
                 {
-                    $or: [
-                        { profileUserId: profileUserId },
-                        { authorUserId: profileUserId }
-                    ]
+                    profileUserId: profileUserId
                 },
                 {
                     $or: [
@@ -323,6 +321,42 @@ exports.deletePost = async (req, res) => {
             return res.status(403).send({ message: "You don't have permission to delete this post" });
         }
 
+        // Delete media files from server
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Delete images
+        if (post.images && Array.isArray(post.images)) {
+            post.images.forEach((imagePath) => {
+                if (imagePath) {
+                    const fullPath = path.join(__dirname, '../../', imagePath);
+                    if (fs.existsSync(fullPath)) {
+                        try {
+                            fs.unlinkSync(fullPath);
+                        } catch (err) {
+                            logger.warn("Could not delete post image:", err);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Delete videos
+        if (post.videos && Array.isArray(post.videos)) {
+            post.videos.forEach((videoPath) => {
+                if (videoPath) {
+                    const fullPath = path.join(__dirname, '../../', videoPath);
+                    if (fs.existsSync(fullPath)) {
+                        try {
+                            fs.unlinkSync(fullPath);
+                        } catch (err) {
+                            logger.warn("Could not delete post video:", err);
+                        }
+                    }
+                }
+            });
+        }
+
         post.isDeleted = true;
         await post.save();
 
@@ -439,7 +473,7 @@ exports.voteOnPoll = async (req, res) => {
         if (optionIndex < 0 || optionIndex >= post.poll.options.length) {
             return res.status(400).send({ message: "Invalid option index" });
         }
-
+        
         // Check if user already voted - remove their previous vote if exists
         const existingVoteIndex = post.poll.votes.findIndex(
             vote => {
@@ -645,9 +679,9 @@ exports.addReply = async (req, res) => {
 
         // Check reply settings from root post
         const canReply = checkReplySettings(parentPost.replySettings, userId, parentPost.profileUserId, parentPost.authorUserId);
-        if (!canReply) {
-            return res.status(403).send({ message: "You don't have permission to reply to this comment" });
-        }
+            if (!canReply) {
+                return res.status(403).send({ message: "You don't have permission to reply to this comment" });
+            }
 
         // Create reply as a new Post
         const reply = new Post({
@@ -663,7 +697,7 @@ exports.addReply = async (req, res) => {
         // Populate reply user info
         await reply.populate('authorUserId', 'firstName lastName username avatar');
         await reply.populate('profileUserId', 'firstName lastName username avatar');
-
+            
         // Get all comments for this post
         const allComments = await Post.find({
             $or: [
@@ -700,7 +734,7 @@ exports.addReply = async (req, res) => {
 
         // Build comment tree
         const comments = await buildCommentTree(allComments, postId);
-        
+
         // Populate post
         await parentPost.populate('authorUserId', 'firstName lastName username avatar');
         await parentPost.populate('profileUserId', 'firstName lastName username avatar');

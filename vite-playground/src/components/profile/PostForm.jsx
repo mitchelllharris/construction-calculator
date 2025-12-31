@@ -9,6 +9,7 @@ import { GiphyFetch } from '@giphy/js-fetch-api';
 import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
+import LocationInput from '../LocationInput';
 import Button from '../Button';
 
 export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = false }) {
@@ -253,34 +254,6 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
     setPollOptions(newOptions);
   };
 
-  const handleLocationSearch = (query) => {
-    // This would integrate with a location search API (like Google Places)
-    // For now, we'll use a simple implementation
-    if (query.trim()) {
-      setLocation({ name: query, coordinates: null });
-    }
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            name: 'Current Location',
-            coordinates: {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
-            }
-          });
-        },
-        () => {
-          showError('Unable to get your location');
-        }
-      );
-    } else {
-      showError('Geolocation is not supported by your browser');
-    }
-  };
 
   return (
     <div className="bg-white shadow rounded-lg p-4">
@@ -553,22 +526,16 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
               </button>
             </div>
             <div className="space-y-2">
-              <input
-                type="text"
+              <LocationInput
+                value={location}
+                onChange={setLocation}
                 placeholder="Search for a location..."
-                onChange={(e) => handleLocationSearch(e.target.value)}
+                format="full"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button
-                type="button"
-                onClick={handleUseCurrentLocation}
-                className="w-full px-3 py-2 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors text-sm"
-              >
-                Use Current Location
-              </button>
               {location && (
                 <div className="p-2 bg-white rounded border border-gray-200">
-                  <p className="text-sm text-gray-700">{location.name}</p>
+                  <p className="text-sm text-gray-700">{location.formattedAddress || location.name}</p>
                 </div>
               )}
             </div>

@@ -19,8 +19,8 @@ import PhotoGalleryModal from '../components/profile/PhotoGalleryModal';
 import PostForm from '../components/profile/PostForm';
 import ActivityFeed from '../components/profile/ActivityFeed';
 import { 
-  MdEmail, MdPhone, MdLocationOn, MdBusiness, MdWork, MdSchool, 
-  MdStar, MdLink, MdEdit, MdArrowBack, MdCheckCircle, MdCalendarToday,
+  MdEmail, MdPhone, MdLocationOn, MdWork, MdSchool, 
+  MdLink, MdEdit, MdArrowBack, MdCheckCircle, MdCalendarToday,
   MdImage, MdCamera
 } from 'react-icons/md';
 import Button from '../components/Button';
@@ -49,6 +49,7 @@ export default function Profile() {
   const [showPhotoGalleryModal, setShowPhotoGalleryModal] = useState(false);
   const [photoGalleryIndex, setPhotoGalleryIndex] = useState(0);
   const [postsRefreshKey, setPostsRefreshKey] = useState(0);
+  const [posts, setPosts] = useState([]);
 
   // Calculate isOwnProfile - needs to be before useEffect that uses it
   const isOwnProfile = currentUser && profile && (currentUser.id === profile?.id || currentUser.username === profile?.username);
@@ -56,6 +57,12 @@ export default function Profile() {
   useEffect(() => {
     fetchProfile();
   }, [username, id]);
+
+  useEffect(() => {
+    if (profile?.id) {
+      fetchPostsForGallery();
+    }
+  }, [profile?.id, postsRefreshKey]);
 
   // Track profile view (only for non-owners) - use ref to prevent duplicate calls
   const hasTrackedView = useRef(new Set());
@@ -96,6 +103,17 @@ export default function Profile() {
     }
   };
 
+  const fetchPostsForGallery = async () => {
+    if (!profile?.id) return;
+    try {
+      const data = await get(API_ENDPOINTS.PROFILE.GET_POSTS(profile.id));
+      setPosts(data.posts || []);
+    } catch (error) {
+      console.error('Failed to fetch posts for gallery:', error);
+      setPosts([]);
+    }
+  };
+
   const getInitials = (firstName, lastName) => {
     const first = firstName?.charAt(0)?.toUpperCase() || '';
     const last = lastName?.charAt(0)?.toUpperCase() || '';
@@ -109,10 +127,10 @@ export default function Profile() {
   };
 
   // Save handlers
-  const handleSaveBio = async (bio) => {
-    const result = await updateProfile({ ...profile, bio });
+  const handleSaveBio = async (bio, bioImage) => {
+    const result = await updateProfile({ ...profile, bio, bioImage });
     if (result.success) {
-      setProfile({ ...profile, bio });
+      setProfile({ ...profile, bio, bioImage });
       await fetchProfile(); // Refresh profile
       showSuccess('Bio updated successfully');
     } else {
@@ -361,9 +379,22 @@ export default function Profile() {
     profile.location?.country
   ].filter(Boolean).join(', ');
 
-  // Extract all images from portfolio for photo gallery
+  // Extract all images from portfolio, bio, and posts for photo gallery
   const getAllPortfolioImages = () => {
     const images = [];
+    
+    // Add bio image if it exists
+    if (profile.bioImage && profile.bioImage.trim()) {
+      images.push({
+        url: profile.bioImage,
+        date: profile.updatedAt ? new Date(profile.updatedAt) : new Date(),
+        projectTitle: 'About Me',
+        uploadedBy: 'owner',
+        uploadedByUser: null,
+      });
+    }
+    
+    // Add portfolio images
     profile.portfolio?.forEach((item) => {
       if (item.images && Array.isArray(item.images)) {
         item.images.forEach((imageUrl) => {
@@ -371,10 +402,53 @@ export default function Profile() {
             url: imageUrl,
             date: item.date ? new Date(item.date) : new Date(0),
             projectTitle: item.title || 'Untitled Project',
+            uploadedBy: 'owner',
+            uploadedByUser: null,
           });
         });
       }
     });
+    
+    // Add post images and videos
+    posts.forEach((post) => {
+      // Only include top-level posts (not comments/replies) and not deleted
+      if (post.parentPostId || post.parentCommentId || post.isDeleted) return;
+      
+      const postDate = post.createdAt ? new Date(post.createdAt) : new Date();
+      // Check if author is the profile owner (posts posted ON this profile)
+      // profileUserId is the profile the post is on, authorUserId is who created it
+      const authorId = post.authorUserId?.id || post.authorUserId?._id?.toString() || post.authorUserId?.toString();
+      const profileId = profile?.id?.toString() || profile?._id?.toString();
+      const isOwner = authorId === profileId;
+      
+      // Add images from post
+      if (post.images && Array.isArray(post.images) && post.images.length > 0) {
+        post.images.forEach((imageUrl) => {
+          images.push({
+            url: imageUrl,
+            date: postDate,
+            projectTitle: post.content ? (post.content.length > 50 ? post.content.substring(0, 50) + '...' : post.content) : 'Post',
+            uploadedBy: isOwner ? 'owner' : 'user',
+            uploadedByUser: isOwner ? null : (post.authorUserId || null),
+          });
+        });
+      }
+      
+      // Add videos from post
+      if (post.videos && Array.isArray(post.videos) && post.videos.length > 0) {
+        post.videos.forEach((videoUrl) => {
+          images.push({
+            url: videoUrl,
+            date: postDate,
+            projectTitle: post.content ? (post.content.length > 50 ? post.content.substring(0, 50) + '...' : post.content) : 'Post',
+            uploadedBy: isOwner ? 'owner' : 'user',
+            uploadedByUser: isOwner ? null : (post.authorUserId || null),
+            isVideo: true,
+          });
+        });
+      }
+    });
+    
     // Sort by date (most recent first)
     return images.sort((a, b) => b.date - a.date);
   };
@@ -583,13 +657,30 @@ export default function Profile() {
             {/* Bio */}
             <EditableSection
               title="About"
-              isEmpty={!profile.bio}
+              isEmpty={!profile.bio && !profile.bioImage}
               isOwnProfile={isOwnProfile}
               onEdit={() => setShowBioModal(true)}
               onAdd={() => setShowBioModal(true)}
               emptyMessage="Add your first about section"
             >
-              <p className="text-gray-700 whitespace-pre-wrap break-words">{profile.bio}</p>
+              {profile.bioImage && profile.bioImage.trim() && (
+                <div className="mb-4">
+                  <img
+                    src={profile.bioImage.startsWith('http') 
+                      ? profile.bioImage 
+                      : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${profile.bioImage}`}
+                    alt="About"
+                    className="w-full rounded-lg object-cover max-h-96"
+                    onError={(e) => {
+                      console.error('Failed to load bio image:', profile.bioImage);
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+              {profile.bio && (
+                <p className="text-gray-700 whitespace-pre-wrap break-words">{profile.bio}</p>
+              )}
             </EditableSection>
 
             {/* Activity Feed */}
@@ -748,27 +839,6 @@ export default function Profile() {
               </div>
             </EditableSection>
 
-            {/* Skills */}
-            <EditableSection
-              title="Skills"
-              isEmpty={!profile.skills || profile.skills.length === 0}
-              isOwnProfile={isOwnProfile}
-              onEdit={() => setShowSkillsModal(true)}
-              onAdd={() => setShowSkillsModal(true)}
-              emptyMessage="Add your first skill"
-            >
-              <div className="flex flex-wrap gap-2">
-                {profile.skills?.map((skill, index) => (
-                  <span
-                    key={index}
-                    className="px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium"
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </EditableSection>
-
             {/* Certifications */}
             <EditableSection
               title="Certifications & Qualifications"
@@ -919,6 +989,27 @@ export default function Profile() {
               onImageClick={handlePhotoClick}
             />
 
+            {/* Skills */}
+            <EditableSection
+              title="Skills"
+              isEmpty={!profile.skills || profile.skills.length === 0}
+              isOwnProfile={isOwnProfile}
+              onEdit={() => setShowSkillsModal(true)}
+              onAdd={() => setShowSkillsModal(true)}
+              emptyMessage="Add your first skill"
+            >
+              <div className="flex flex-wrap gap-2">
+                {profile.skills?.map((skill, index) => (
+                  <span
+                    key={index}
+                    className="px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </EditableSection>
+
             {/* Service Areas */}
             {profile.serviceAreas && profile.serviceAreas.length > 0 && (
               <div className="bg-white shadow rounded-lg p-6">
@@ -948,13 +1039,6 @@ export default function Profile() {
               </div>
             )}
 
-            {/* Member Since */}
-            <div className="bg-white shadow rounded-lg p-6">
-              <h3 className="font-semibold text-gray-900 mb-3">Member Since</h3>
-              <p className="text-gray-600">
-                {formatDate(profile.createdAt)}
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -964,6 +1048,7 @@ export default function Profile() {
         isOpen={showBioModal}
         onClose={() => setShowBioModal(false)}
         initialBio={profile?.bio || ''}
+        initialBioImage={profile?.bioImage || ''}
         onSave={handleSaveBio}
       />
       <SkillsEditModal

@@ -31,6 +31,7 @@ exports.getProfile = async (req, res) => {
             trade: user.trade || "",
             businessName: user.businessName || "",
             bio: user.bio || "",
+            bioImage: user.bioImage || "",
             phone: user.phone || "",
             website: user.website || "",
             location: user.location || {},
@@ -165,6 +166,23 @@ exports.updateProfile = async (req, res) => {
                     .trim();
             }
             updates.bio = cleanedBio || null;
+        }
+        if (req.body.hasOwnProperty('bioImage')) {
+            const newBioImage = req.body.bioImage ? req.body.bioImage.trim() : null;
+            // Delete old bio image if it's being removed or replaced
+            if (user.bioImage && user.bioImage !== newBioImage) {
+                const fs = require('fs');
+                const path = require('path');
+                const oldBioImagePath = path.join(__dirname, '../../', user.bioImage);
+                if (fs.existsSync(oldBioImagePath)) {
+                    try {
+                        fs.unlinkSync(oldBioImagePath);
+                    } catch (err) {
+                        logger.warn("Could not delete old bio image:", err);
+                    }
+                }
+            }
+            updates.bioImage = newBioImage;
         }
         if (req.body.hasOwnProperty('phone')) updates.phone = phone ? phone.trim() : null;
         if (req.body.hasOwnProperty('website')) updates.website = website ? website.trim() : null;
@@ -397,6 +415,9 @@ exports.getPublicProfile = async (req, res) => {
         if (showBio && user.bio) {
             response.bio = user.bio;
         }
+        if (showBio && user.bioImage) {
+            response.bioImage = user.bioImage;
+        }
         if (showExperience && user.experience) {
             response.experience = user.experience;
         }
@@ -496,6 +517,55 @@ exports.uploadAvatar = async (req, res) => {
         const isDevelopment = process.env.NODE_ENV !== 'production';
         return res.status(500).send({ 
             message: isDevelopment ? (error.message || "Failed to upload avatar.") : "Failed to upload avatar. Please try again." 
+        });
+    }
+};
+
+// Upload bio image
+exports.uploadBioImage = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send({ message: "Image file is required" });
+        }
+
+        const user = await User.findById(req.userId);
+        if (!user) {
+            // Delete uploaded file if user not found
+            const fs = require('fs');
+            if (req.file.path) {
+                fs.unlinkSync(req.file.path);
+            }
+            return res.status(404).send({ message: "User not found" });
+        }
+
+        // Delete old bio image if exists
+        if (user.bioImage) {
+            const fs = require('fs');
+            const path = require('path');
+            const oldBioImagePath = path.join(__dirname, '../../', user.bioImage);
+            if (fs.existsSync(oldBioImagePath)) {
+                try {
+                    fs.unlinkSync(oldBioImagePath);
+                } catch (err) {
+                    logger.warn("Could not delete old bio image:", err);
+                }
+            }
+        }
+
+        // Store relative path from server root: /uploads/bio/filename
+        const imagePath = `/uploads/bio/${req.file.filename}`;
+        user.bioImage = imagePath;
+        await user.save();
+
+        return res.status(200).send({
+            message: "Bio image uploaded successfully",
+            imageUrl: imagePath,
+        });
+    } catch (error) {
+        logger.error("Error uploading bio image:", error);
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        return res.status(500).send({ 
+            message: isDevelopment ? (error.message || "Failed to upload image.") : "Failed to upload image. Please try again." 
         });
     }
 };

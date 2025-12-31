@@ -1,20 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { MdClose } from 'react-icons/md';
+import React, { useState, useEffect, useRef } from 'react';
+import { MdClose, MdPhotoLibrary, MdDelete } from 'react-icons/md';
 import Button from '../Button';
 import { useToast } from '../../contexts/ToastContext';
+import { getToken } from '../../utils/api';
+import { API_ENDPOINTS } from '../../config/api';
 
-export default function BioEditModal({ isOpen, onClose, initialBio = '', onSave }) {
+export default function BioEditModal({ isOpen, onClose, initialBio = '', initialBioImage = '', onSave }) {
   const [bio, setBio] = useState('');
+  const [bioImage, setBioImage] = useState('');
+  const [previewImage, setPreviewImage] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { showError } = useToast();
+  const fileInputRef = useRef(null);
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
     if (isOpen) {
       // Strip any existing links from initial bio
       const cleanedBio = removeLinks(initialBio || '');
       setBio(cleanedBio);
+      setBioImage(initialBioImage || '');
+      if (initialBioImage) {
+        const imageUrl = initialBioImage.startsWith('http') 
+          ? initialBioImage 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${initialBioImage}`;
+        setPreviewImage(imageUrl);
+      } else {
+        setPreviewImage(null);
+      }
     }
-  }, [isOpen, initialBio]);
+  }, [isOpen, initialBio, initialBioImage]);
 
   // Function to detect and remove URLs/links
   const removeLinks = (text) => {
@@ -65,12 +80,77 @@ export default function BioEditModal({ isOpen, onClose, initialBio = '', onSave 
     }
   };
 
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      showError('Please select an image file');
+      return;
+    }
+
+    // Validate file size (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      showError('Image size must be less than 10MB');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        showError('Please log in to upload image');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('bioImage', file);
+
+      const response = await fetch(API_ENDPOINTS.USER.UPLOAD_BIO_IMAGE, {
+        method: 'POST',
+        headers: {
+          'x-access-token': token,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(error.message || 'Upload failed');
+      }
+
+      const result = await response.json();
+      setBioImage(result.imageUrl);
+      const imageUrl = result.imageUrl.startsWith('http') 
+        ? result.imageUrl 
+        : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${result.imageUrl}`;
+      setPreviewImage(imageUrl);
+      showSuccess('Image uploaded successfully');
+    } catch (error) {
+      showError(error.message || 'Failed to upload image');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setBioImage('');
+    setPreviewImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       // Final cleanup before saving
       const cleanedBio = removeLinks(bio);
-      await onSave(cleanedBio);
+      await onSave(cleanedBio, bioImage);
       onClose();
     } catch (error) {
       console.error('Failed to save bio:', error);
@@ -95,6 +175,52 @@ export default function BioEditModal({ isOpen, onClose, initialBio = '', onSave 
         </div>
         
         <div className="p-6">
+          {/* Image Upload Section */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Photo (Optional)
+            </label>
+            {previewImage ? (
+              <div className="relative">
+                <img
+                  src={previewImage}
+                  alt="Bio preview"
+                  className="w-full max-h-64 object-cover rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                >
+                  <MdDelete size={20} />
+                </button>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  disabled={uploading}
+                />
+                <MdPhotoLibrary size={48} className="mx-auto text-gray-400 mb-2" />
+                <p className="text-gray-600 mb-2">No image selected</p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploading ? 'Uploading...' : 'Select Image'}
+                </button>
+                <p className="text-xs text-gray-500 mt-2">Max size: 10MB</p>
+              </div>
+            )}
+          </div>
+
+          {/* Bio Text Section */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               About Me

@@ -26,6 +26,23 @@ const avatarStorage = multer.diskStorage({
     }
 });
 
+// Configure storage for bio images
+const bioImageStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const bioDir = path.join(uploadsDir, 'bio');
+        if (!fs.existsSync(bioDir)) {
+            fs.mkdirSync(bioDir, { recursive: true });
+        }
+        cb(null, bioDir);
+    },
+    filename: (req, file, cb) => {
+        // Generate unique filename: userId-timestamp-originalname
+        const uniqueSuffix = `${req.userId}-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `bio-${uniqueSuffix}${ext}`);
+    }
+});
+
 // Configure storage for portfolio images
 const portfolioStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -156,6 +173,15 @@ const uploadAvatar = multer({
     }
 }).single('avatar');
 
+// Bio image upload middleware
+const uploadBioImage = multer({
+    storage: bioImageStorage,
+    fileFilter: imageFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit for bio images
+    }
+}).single('bioImage');
+
 // Portfolio image upload middleware
 const uploadPortfolioImage = multer({
     storage: portfolioStorage,
@@ -220,6 +246,7 @@ const handleUploadError = (uploadMiddleware) => {
 
 module.exports = {
     uploadAvatar: handleUploadError(uploadAvatar),
+    uploadBioImage: handleUploadError(uploadBioImage),
     uploadPortfolioImage: handleUploadError(uploadPortfolioImage),
     uploadCertificationPDF: handleUploadError(uploadCertificationPDF),
     uploadCSV: handleUploadError(uploadCSV),

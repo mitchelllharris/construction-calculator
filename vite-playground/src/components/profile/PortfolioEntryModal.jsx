@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MdClose, MdDelete } from 'react-icons/md';
 import Input from '../Input';
+import LocationInput from '../LocationInput';
 import Button from '../Button';
 import ImageGallery from '../ImageGallery';
 import { useToast } from '../../contexts/ToastContext';
@@ -139,12 +140,18 @@ export default function PortfolioEntryModal({
               value={portfolio.date}
               onChange={(e) => handleUpdate('date', e.target.value)}
             />
-            <Input
-              label="Location"
-              value={portfolio.location}
-              onChange={(e) => handleUpdate('location', e.target.value)}
-              placeholder="Project Location"
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Location
+              </label>
+              <LocationInput
+                value={portfolio.location}
+                onChange={(location) => handleUpdate('location', location)}
+                placeholder="Search for project location..."
+                format="string"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
           </div>
         </div>
 

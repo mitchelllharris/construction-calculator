@@ -2,7 +2,7 @@ const { authJwt } = require("../middlewares");
 const { apiLimiter } = require("../middlewares/rateLimiter");
 const { body } = require("express-validator");
 const { handleValidationErrors } = require("../middlewares/validator");
-const { uploadAvatar, uploadPortfolioImage, uploadCertificationPDF } = require("../middlewares/upload");
+const { uploadAvatar, uploadBioImage, uploadPortfolioImage, uploadCertificationPDF } = require("../middlewares/upload");
 const controller = require("../controllers/profile.controller");
 
 // Custom email validator that requires TLD with at least 3 characters
@@ -120,6 +120,15 @@ module.exports = function(app) {
         [authJwt.verifyToken],
         uploadAvatar,
         controller.uploadAvatar
+    );
+
+    // Upload bio image
+    app.post(
+        "/api/user/bio-image",
+        apiLimiter,
+        [authJwt.verifyToken],
+        uploadBioImage,
+        controller.uploadBioImage
     );
 
     // Get verification status

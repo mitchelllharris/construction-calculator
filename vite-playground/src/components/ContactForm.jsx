@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useFormValidation } from '../hooks/useFormValidation';
 import Input from './Input';
+import LocationInput from './LocationInput';
 import Button from './Button';
 import { MdPerson, MdEmail, MdPhone, MdBusiness, MdLocationOn, MdNotes, MdTag, MdImage } from 'react-icons/md';
 import { uploadAvatar } from '../utils/contactApi';
@@ -354,49 +355,41 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            City
-          </label>
-          <Input
-            {...getFieldPropsWithValidation('city')}
-            placeholder="New York"
-            error={touched.city ? getFieldProps('city').error : null}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            State
-          </label>
-          <Input
-            {...getFieldPropsWithValidation('state')}
-            placeholder="NY"
-            error={touched.state ? getFieldProps('state').error : null}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Zip Code
-          </label>
-          <Input
-            {...getFieldPropsWithValidation('zip')}
-            placeholder="10001"
-            error={touched.zip ? getFieldProps('zip').error : null}
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Location
+        </label>
+        <LocationInput
+          value={formData.city || formData.state || formData.country ? {
+            city: formData.city || '',
+            state: formData.state || '',
+            country: formData.country || '',
+          } : null}
+          onChange={(location) => {
+            if (location) {
+              setValue('city', location.city || '');
+              setValue('state', location.state || '');
+              setValue('country', location.country || '');
+            } else {
+              setValue('city', '');
+              setValue('state', '');
+              setValue('country', '');
+            }
+          }}
+          placeholder="Search for city, state, country..."
+          format="simple"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Country
+          Zip Code
         </label>
         <Input
-          {...getFieldPropsWithValidation('country')}
-          placeholder="United States"
-          error={touched.country ? getFieldProps('country').error : null}
+          {...getFieldPropsWithValidation('zip')}
+          placeholder="10001"
+          error={touched.zip ? getFieldProps('zip').error : null}
         />
       </div>
 

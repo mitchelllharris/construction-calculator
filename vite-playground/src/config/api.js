@@ -19,6 +19,9 @@ export const API_ENDPOINTS = {
     UPLOAD_PORTFOLIO_IMAGE: `${API_BASE_URL}/api/user/portfolio/upload-image`,
     UPLOAD_CERTIFICATION_PDF: `${API_BASE_URL}/api/user/certifications/upload-pdf`,
     UPLOAD_AVATAR: `${API_BASE_URL}/api/user/avatar`,
+    UPLOAD_BIO_IMAGE: `${API_BASE_URL}/api/user/bio-image`,
+    SEARCH: (query, type, page = 1, limit = 20) => 
+      `${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}&type=${type}&page=${page}&limit=${limit}`,
   },
   PROFILE: {
     GET_BY_USERNAME: (username) => `${API_BASE_URL}/api/profile/${username}`,
