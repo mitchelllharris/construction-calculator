@@ -36,6 +36,19 @@ exports.searchUsers = async (req, res) => {
         
         const searchTerm = req.query.q || '';
         const type = req.query.type || 'all'; // 'all', 'people', 'businesses'
+        const excludeUserId = req.query.excludeUserId || null; // Exclude this user's personal profile
+        const allowOwnProfile = req.query.allowOwnProfile === 'true'; // Allow own profile if logged in as business
+        const loggedInUserId = req.userId; // The logged-in user's ID (for allowOwnProfile logic)
+        
+        // Debug logging
+        logger.info("Search users params:", { 
+            searchTerm, 
+            type, 
+            excludeUserId, 
+            allowOwnProfile,
+            loggedInUserId,
+            userId: req.userId 
+        });
 
         // Build query conditions
         const conditions = [];
@@ -43,19 +56,78 @@ exports.searchUsers = async (req, res) => {
         // Filter by type (people vs businesses)
         if (type === 'people') {
             // People: exclude users with businessName
-            conditions.push({
-                $or: [
-                    { businessName: { $exists: false } },
-                    { businessName: null },
-                    { businessName: '' }
-                ]
-            });
+            // BUT: if allowOwnProfile is true, we need to allow the personal profile through
+            // even if it has a businessName field (by including it explicitly)
+            if (allowOwnProfile && loggedInUserId) {
+                // Allow the personal profile (loggedInUserId) even if it has businessName
+                const mongoose = require('mongoose');
+                try {
+                    const userIdObjectId = mongoose.Types.ObjectId.isValid(loggedInUserId) 
+                        ? new mongoose.Types.ObjectId(loggedInUserId) 
+                        : loggedInUserId;
+                    conditions.push({
+                        $or: [
+                            { businessName: { $exists: false } },
+                            { businessName: null },
+                            { businessName: '' },
+                            // Include the personal profile even if it has businessName
+                            { _id: userIdObjectId }
+                        ]
+                    });
+                    logger.info("Allowing personal profile in people search (has businessName):", loggedInUserId);
+                } catch (err) {
+                    // Invalid ObjectId format, use normal filter
+                    logger.warn("Invalid loggedInUserId format, using normal people filter:", loggedInUserId);
+                    conditions.push({
+                        $or: [
+                            { businessName: { $exists: false } },
+                            { businessName: null },
+                            { businessName: '' }
+                        ]
+                    });
+                }
+            } else {
+                // Normal people filter: exclude users with businessName
+                conditions.push({
+                    $or: [
+                        { businessName: { $exists: false } },
+                        { businessName: null },
+                        { businessName: '' }
+                    ]
+                });
+            }
         } else if (type === 'businesses') {
             // Businesses: only include users with businessName
             conditions.push({
                 businessName: { $exists: true, $ne: null, $ne: '' }
             });
         }
+
+        // Exclude current user's personal profile from search results
+        // Logic:
+        // - If logged in as personal user (excludeUserId provided, allowOwnProfile false): exclude personal profile
+        // - If logged in as business (allowOwnProfile true): don't exclude personal profile, allow it to show
+        // - If excludeUserId is null (logged in as business): don't exclude anything
+        if (excludeUserId && !allowOwnProfile) {
+            // User is logged in as personal profile - exclude their personal profile from results
+            const mongoose = require('mongoose');
+            try {
+                const excludeObjectId = mongoose.Types.ObjectId.isValid(excludeUserId) 
+                    ? new mongoose.Types.ObjectId(excludeUserId) 
+                    : excludeUserId;
+                conditions.push({
+                    _id: { $ne: excludeObjectId }
+                });
+                logger.info("Excluding user from search:", excludeUserId);
+            } catch (err) {
+                // Invalid ObjectId format, skip exclusion
+                logger.warn("Invalid excludeUserId format:", excludeUserId);
+            }
+        } else if (allowOwnProfile) {
+            // Logged in as business - explicitly allow personal profile to show
+            logger.info("Allowing own profile in search (logged in as business)");
+        }
+        // If excludeUserId is null and allowOwnProfile is false, no exclusion needed (normal case)
 
         // Search across multiple fields
         // SECURITY: Sanitize search input to prevent NoSQL injection
@@ -80,6 +152,7 @@ exports.searchUsers = async (req, res) => {
         const query = conditions.length > 0 ? { $and: conditions } : {};
 
         // Get users with filters
+        logger.info("Search users query:", JSON.stringify(query));
         const users = await User.find(query)
             .select("-password -verificationToken -resetPasswordToken -loginAttempts -lockUntil -tokenVersion -email")
             .sort({ createdAt: -1 })
