@@ -1,5 +1,6 @@
 import React from 'react';
 import { MdDelete, MdCheckCircle } from 'react-icons/md';
+import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
 import ReactionPicker from './ReactionPicker';
 import MediaGallery from './MediaGallery';
 import CommentSection from './CommentSection';
@@ -23,12 +24,30 @@ export default function PostView({
   isPollEnded,
   formatDate
 }) {
-  const canDelete = isOwnProfile || (currentUser && (
+  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  
+  // Check if user is the author
+  const isAuthor = currentUser && (
     currentUser.id?.toString() === post.authorUserId?._id?.toString() ||
     currentUser.id?.toString() === post.authorUserId?.toString() ||
     currentUser._id?.toString() === post.authorUserId?._id?.toString() ||
     currentUser._id?.toString() === post.authorUserId?.toString()
-  ));
+  );
+  
+  // Check if post belongs to active profile
+  const postBusinessId = post.businessId?._id?.toString() || post.businessId?.toString();
+  const postProfileUserId = post.profileUserId?._id?.toString() || post.profileUserId?.toString();
+  const activeBusinessId = isBusinessProfile ? (activeProfile?.id?.toString()) : null;
+  const activeProfileUserId = isUserProfile ? (activeProfile?.id?.toString() || currentUser?.id?.toString() || currentUser?._id?.toString()) : null;
+  
+  // Can delete if:
+  // 1. User is the author (always allowed)
+  // 2. Post is on a business profile AND active profile is that business AND isOwnProfile is true
+  // 3. Post is on a user profile AND active profile is that user AND isOwnProfile is true
+  const canDelete = isAuthor || (
+    (postBusinessId && activeBusinessId === postBusinessId && isOwnProfile) ||
+    (postProfileUserId && activeProfileUserId === postProfileUserId && isOwnProfile)
+  );
 
   return (
     <div 

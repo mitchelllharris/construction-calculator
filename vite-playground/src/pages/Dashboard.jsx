@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { Link } from 'react-router-dom';
 import UserStats from '../components/UserStats';
 import UserTable from '../components/UserTable';
@@ -147,11 +148,25 @@ export default function Dashboard() {
   }
 
   // Regular User Dashboard
+  const { activeProfile, isUserProfile, isBusinessProfile, businesses } = useProfileSwitcher();
+  
+  const getProfileLink = () => {
+    if (isUserProfile && user?.username) {
+      return `/profile/${user.username}`;
+    } else if (isBusinessProfile && activeProfile?.id) {
+      const business = businesses.find(b => b._id === activeProfile.id);
+      if (business) {
+        return `/business/${business.businessSlug || business._id}`;
+      }
+    }
+    return user?.username ? `/profile/${user.username}` : '/profile';
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-gray-600">Welcome back, {user.username}!</p>
+        <p className="text-gray-600">Welcome back, {isUserProfile ? user.username : activeProfile?.name || user.username}!</p>
       </div>
 
       {/* Email Verification Reminder */}
@@ -221,14 +236,18 @@ export default function Dashboard() {
           >
             → Settings
           </Link>
-          {user.firstName && (
-            <Link
-              to="/profile"
-              className="block text-blue-600 hover:text-blue-800"
-            >
-              → View Profile
-            </Link>
-          )}
+          <Link
+            to={getProfileLink()}
+            className="block text-blue-600 hover:text-blue-800"
+          >
+            → View Profile
+          </Link>
+          <Link
+            to="/my-businesses"
+            className="block text-blue-600 hover:text-blue-800"
+          >
+            → My Businesses
+          </Link>
         </div>
       </div>
     </div>

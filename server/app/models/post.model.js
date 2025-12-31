@@ -6,7 +6,13 @@ const Post = mongoose.model(
         profileUserId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true,
+            required: false,
+            index: true
+        },
+        businessId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Business',
+            required: false,
             index: true
         },
         authorUserId: {

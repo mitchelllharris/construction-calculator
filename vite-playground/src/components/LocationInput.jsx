@@ -1,8 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useLoadScript } from '@react-google-maps/api';
 import { MdLocationOn, MdMyLocation } from 'react-icons/md';
 
-const libraries = ['places'];
+// Keep libraries array as a constant to prevent LoadScript reload
+// For Places API (New), we use REST API, so we don't need the places library
+const libraries = [];
 
 export default function LocationInput({
   value = null,
@@ -14,14 +16,22 @@ export default function LocationInput({
   required = false,
 }) {
   const [inputValue, setInputValue] = useState('');
-  const [autocomplete, setAutocomplete] = useState(null);
+  const [predictions, setPredictions] = useState([]);
+  const [showPredictions, setShowPredictions] = useState(false);
   const inputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+  const predictionsRef = useRef(null);
+  const sessionTokenRef = useRef(null);
 
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+  const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+
+  // Memoize the load script options to prevent unnecessary reloads
+  const loadScriptOptions = useMemo(() => ({
+    googleMapsApiKey: API_KEY,
     libraries,
-  });
+    version: 'weekly',
+  }), []);
+
+  const { isLoaded, loadError } = useLoadScript(loadScriptOptions);
 
   useEffect(() => {
     if (value) {
@@ -44,73 +54,210 @@ export default function LocationInput({
     }
   }, [value, format]);
 
+  // Memoize the onChange handler to prevent infinite loops
+  const onChangeRef = useRef(onChange);
   useEffect(() => {
-    if (isLoaded && inputRef.current && !autocomplete) {
-      const autocompleteInstance = new window.google.maps.places.Autocomplete(
-        inputRef.current,
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Generate session token for Places API (New)
+  const generateSessionToken = () => {
+    // Simple session token generation (UUID-like)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  // Get autocomplete predictions using Places API (New) REST API
+  const getAutocompletePredictions = async (input) => {
+    if (!input.trim() || !API_KEY) {
+      setPredictions([]);
+      setShowPredictions(false);
+      return;
+    }
+
+    if (!sessionTokenRef.current) {
+      sessionTokenRef.current = generateSessionToken();
+    }
+
+    try {
+      const response = await fetch(
+        `https://places.googleapis.com/v1/places:autocomplete?key=${API_KEY}`,
         {
-          types: ['geocode', 'establishment'],
-          fields: ['formatted_address', 'geometry', 'address_components', 'name', 'place_id'],
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text',
+          },
+          body: JSON.stringify({
+            input: input,
+            includedRegionCodes: [],
+            includedPrimaryTypes: ['establishment', 'geocode'],
+            sessionToken: sessionTokenRef.current,
+          }),
         }
       );
 
-      autocompleteInstance.addListener('place_changed', () => {
-        const place = autocompleteInstance.getPlace();
-        
-        if (!place.geometry) {
-          return;
-        }
+      if (!response.ok) {
+        throw new Error(`Places API error: ${response.status}`);
+      }
 
-        // Extract address components
-        const addressComponents = place.address_components || [];
-        const getComponent = (type) => {
-          const component = addressComponents.find(c => c.types.includes(type));
-          return component ? component.long_name : '';
-        };
+      const data = await response.json();
+      if (data.suggestions) {
+        setPredictions(data.suggestions);
+        setShowPredictions(true);
+      } else {
+        setPredictions([]);
+        setShowPredictions(false);
+      }
+    } catch (error) {
+      console.error('LocationInput: Error fetching autocomplete predictions:', error);
+      setPredictions([]);
+      setShowPredictions(false);
+    }
+  };
 
-        const locationData = {
-          formattedAddress: place.formatted_address || '',
-          name: place.name || place.formatted_address || '',
-          coordinates: {
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
+  // Get place details using Places API (New) REST API
+  const getPlaceDetails = async (placeId) => {
+    if (!placeId || !API_KEY) return;
+
+    try {
+      const response = await fetch(
+        `https://places.googleapis.com/v1/places/${placeId}?key=${API_KEY}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,addressComponents,plusCode',
           },
-          city: getComponent('locality') || getComponent('administrative_area_level_2') || '',
-          state: getComponent('administrative_area_level_1') || '',
-          country: getComponent('country') || '',
-          postalCode: getComponent('postal_code') || '',
-          placeId: place.place_id || '',
-          addressComponents: addressComponents,
-        };
-
-        // Format based on requested format
-        let formattedValue;
-        if (format === 'string') {
-          formattedValue = locationData.formattedAddress;
-        } else if (format === 'simple') {
-          formattedValue = {
-            city: locationData.city,
-            state: locationData.state,
-            country: locationData.country,
-          };
-        } else {
-          formattedValue = locationData;
         }
+      );
 
-        setInputValue(locationData.formattedAddress);
-        onChange(formattedValue);
-      });
+      if (!response.ok) {
+        throw new Error(`Places API error: ${response.status}`);
+      }
 
-      setAutocomplete(autocompleteInstance);
-      autocompleteRef.current = autocompleteInstance;
+      const place = await response.json();
+      handlePlaceSelected(place);
+
+      // Generate new session token for next search
+      sessionTokenRef.current = generateSessionToken();
+    } catch (error) {
+      console.error('LocationInput: Error fetching place details:', error);
+    }
+  };
+
+  // Handle place selection
+  const handlePlaceSelected = (place) => {
+    if (!place.location) {
+      console.warn('LocationInput: Place has no location');
+      return;
     }
 
-    return () => {
-      if (autocompleteRef.current) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+    // Extract address components
+    const addressComponents = place.addressComponents || [];
+    const getComponent = (type) => {
+      const component = addressComponents.find(c => c.types?.includes(type));
+      return component ? component.longText : '';
+    };
+
+    const locationData = {
+      formattedAddress: place.formattedAddress || '',
+      name: place.displayName?.text || place.formattedAddress || '',
+      coordinates: {
+        lat: place.location.latitude,
+        lng: place.location.longitude,
+      },
+      city: getComponent('locality') || getComponent('administrative_area_level_2') || '',
+      state: getComponent('administrative_area_level_1') || '',
+      country: getComponent('country') || '',
+      postalCode: getComponent('postal_code') || '',
+      placeId: place.id || '',
+      addressComponents: addressComponents,
+    };
+
+    // Format based on requested format
+    let formattedValue;
+    if (format === 'string') {
+      formattedValue = locationData.formattedAddress;
+    } else if (format === 'simple') {
+      formattedValue = {
+        city: locationData.city,
+        state: locationData.state,
+        country: locationData.country,
+      };
+    } else {
+      formattedValue = locationData;
+    }
+
+    setInputValue(locationData.formattedAddress);
+    onChangeRef.current(formattedValue);
+    setShowPredictions(false);
+    setPredictions([]);
+  };
+
+  // Debounce function for autocomplete
+  const debounceRef = useRef(null);
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setInputValue(value);
+
+    // Clear value if input is cleared
+    if (!value && onChange) {
+      if (format === 'string') {
+        onChange('');
+      } else if (format === 'simple') {
+        onChange({ city: '', state: '', country: '' });
+      } else {
+        onChange(null);
+      }
+      setShowPredictions(false);
+      setPredictions([]);
+      return;
+    }
+
+    // Debounce autocomplete requests
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    debounceRef.current = setTimeout(() => {
+      if (value.trim()) {
+        getAutocompletePredictions(value);
+      } else {
+        setPredictions([]);
+        setShowPredictions(false);
+      }
+    }, 300);
+  };
+
+  // Handle input focus - show autocomplete dropdown
+  const handleInputFocus = () => {
+    if (inputValue.trim()) {
+      getAutocompletePredictions(inputValue);
+    }
+  };
+
+  // Handle clicking outside to close predictions
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        predictionsRef.current &&
+        !predictionsRef.current.contains(event.target) &&
+        inputRef.current &&
+        !inputRef.current.contains(event.target)
+      ) {
+        setShowPredictions(false);
       }
     };
-  }, [isLoaded, autocomplete, format, onChange]);
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleUseCurrentLocation = () => {
     if (navigator.geolocation) {
@@ -174,19 +321,14 @@ export default function LocationInput({
     }
   };
 
-  const handleInputChange = (e) => {
-    setInputValue(e.target.value);
-    // Clear value if input is cleared
-    if (!e.target.value && onChange) {
-      if (format === 'string') {
-        onChange('');
-      } else if (format === 'simple') {
-        onChange({ city: '', state: '', country: '' });
-      } else {
-        onChange(null);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
       }
-    }
-  };
+    };
+  }, []);
 
   if (loadError) {
     return (
@@ -196,36 +338,49 @@ export default function LocationInput({
     );
   }
 
-  if (!isLoaded) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={inputValue}
-        onChange={handleInputChange}
-        placeholder={placeholder}
-        className={className}
-        required={required}
-        disabled
-      />
-    );
-  }
-
   return (
     <div className="relative">
       <div className="relative">
-        <MdLocationOn className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        <MdLocationOn className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" size={20} />
         <input
           ref={inputRef}
           type="text"
           value={inputValue}
           onChange={handleInputChange}
+          onFocus={handleInputFocus}
           placeholder={placeholder}
           className={`${className} pl-10`}
           required={required}
+          autoComplete="off"
         />
       </div>
-      {showCurrentLocation && (
+      {showPredictions && predictions.length > 0 && (
+        <div
+          ref={predictionsRef}
+          className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto"
+        >
+          {predictions.map((suggestion, index) => {
+            const prediction = suggestion.placePrediction;
+            if (!prediction) return null;
+            
+            return (
+              <button
+                key={index}
+                type="button"
+                onClick={() => {
+                  if (prediction.placeId) {
+                    getPlaceDetails(prediction.placeId);
+                  }
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+              >
+                <div className="text-sm text-gray-900">{prediction.text?.text || ''}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showCurrentLocation && isLoaded && (
         <button
           type="button"
           onClick={handleUseCurrentLocation}
@@ -238,4 +393,3 @@ export default function LocationInput({
     </div>
   );
 }
-

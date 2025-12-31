@@ -5,6 +5,7 @@ import { getToken } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import PostView from '../components/profile/PostView';
 import CommentSection from '../components/profile/CommentSection';
 
@@ -400,11 +401,17 @@ export default function Post() {
     );
   }
 
-  const isOwnProfile = currentUser && (
-    currentUser.id?.toString() === post.authorUserId?._id?.toString() ||
-    currentUser.id?.toString() === post.authorUserId?.toString() ||
-    currentUser._id?.toString() === post.authorUserId?._id?.toString() ||
-    currentUser._id?.toString() === post.authorUserId?.toString()
+  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  
+  // Check if post belongs to active profile
+  const postBusinessId = post.businessId?._id?.toString() || post.businessId?.toString();
+  const postProfileUserId = post.profileUserId?._id?.toString() || post.profileUserId?.toString();
+  const activeBusinessId = isBusinessProfile ? (activeProfile?.id?.toString()) : null;
+  const activeProfileUserId = isUserProfile ? (activeProfile?.id?.toString() || currentUser?.id?.toString() || currentUser?._id?.toString()) : null;
+  
+  const isOwnProfile = (
+    (postBusinessId && activeBusinessId === postBusinessId) ||
+    (postProfileUserId && activeProfileUserId === postProfileUserId)
   );
 
   // If viewing a comment, show it as the main post

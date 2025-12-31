@@ -2,44 +2,46 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MdPhone, MdArrowDropDown } from 'react-icons/md';
 
 // Common country codes
+// Countries marked with removeLeadingZero: true use '0' as a trunk prefix that should be removed in international format
+// Countries marked with removeLeadingZero: false either don't use '0' or have it integrated into the number
 const COUNTRY_CODES = [
-  { code: '+1', country: 'US/Canada', flag: '🇺🇸' },
-  { code: '+61', country: 'Australia', flag: '🇦🇺' },
-  { code: '+44', country: 'UK', flag: '🇬🇧' },
-  { code: '+64', country: 'New Zealand', flag: '🇳🇿' },
-  { code: '+27', country: 'South Africa', flag: '🇿🇦' },
-  { code: '+33', country: 'France', flag: '🇫🇷' },
-  { code: '+49', country: 'Germany', flag: '🇩🇪' },
-  { code: '+39', country: 'Italy', flag: '🇮🇹' },
-  { code: '+34', country: 'Spain', flag: '🇪🇸' },
-  { code: '+31', country: 'Netherlands', flag: '🇳🇱' },
-  { code: '+32', country: 'Belgium', flag: '🇧🇪' },
-  { code: '+41', country: 'Switzerland', flag: '🇨🇭' },
-  { code: '+46', country: 'Sweden', flag: '🇸🇪' },
-  { code: '+47', country: 'Norway', flag: '🇳🇴' },
-  { code: '+45', country: 'Denmark', flag: '🇩🇰' },
-  { code: '+358', country: 'Finland', flag: '🇫🇮' },
-  { code: '+353', country: 'Ireland', flag: '🇮🇪' },
-  { code: '+351', country: 'Portugal', flag: '🇵🇹' },
-  { code: '+30', country: 'Greece', flag: '🇬🇷' },
-  { code: '+48', country: 'Poland', flag: '🇵🇱' },
-  { code: '+81', country: 'Japan', flag: '🇯🇵' },
-  { code: '+82', country: 'South Korea', flag: '🇰🇷' },
-  { code: '+86', country: 'China', flag: '🇨🇳' },
-  { code: '+91', country: 'India', flag: '🇮🇳' },
-  { code: '+65', country: 'Singapore', flag: '🇸🇬' },
-  { code: '+60', country: 'Malaysia', flag: '🇲🇾' },
-  { code: '+66', country: 'Thailand', flag: '🇹🇭' },
-  { code: '+62', country: 'Indonesia', flag: '🇮🇩' },
-  { code: '+63', country: 'Philippines', flag: '🇵🇭' },
-  { code: '+84', country: 'Vietnam', flag: '🇻🇳' },
-  { code: '+971', country: 'UAE', flag: '🇦🇪' },
-  { code: '+966', country: 'Saudi Arabia', flag: '🇸🇦' },
-  { code: '+55', country: 'Brazil', flag: '🇧🇷' },
-  { code: '+52', country: 'Mexico', flag: '🇲🇽' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
+  { code: '+1', country: 'US/Canada', flag: '🇺🇸', removeLeadingZero: false }, // Uses '1' as prefix, not '0'
+  { code: '+61', country: 'Australia', flag: '🇦🇺', removeLeadingZero: true },
+  { code: '+44', country: 'UK', flag: '🇬🇧', removeLeadingZero: true },
+  { code: '+64', country: 'New Zealand', flag: '🇳🇿', removeLeadingZero: true },
+  { code: '+27', country: 'South Africa', flag: '🇿🇦', removeLeadingZero: true },
+  { code: '+33', country: 'France', flag: '🇫🇷', removeLeadingZero: true },
+  { code: '+49', country: 'Germany', flag: '🇩🇪', removeLeadingZero: true },
+  { code: '+39', country: 'Italy', flag: '🇮🇹', removeLeadingZero: false }, // '0' is part of the number
+  { code: '+34', country: 'Spain', flag: '🇪🇸', removeLeadingZero: true },
+  { code: '+31', country: 'Netherlands', flag: '🇳🇱', removeLeadingZero: true },
+  { code: '+32', country: 'Belgium', flag: '🇧🇪', removeLeadingZero: true },
+  { code: '+41', country: 'Switzerland', flag: '🇨🇭', removeLeadingZero: true },
+  { code: '+46', country: 'Sweden', flag: '🇸🇪', removeLeadingZero: true },
+  { code: '+47', country: 'Norway', flag: '🇳🇴', removeLeadingZero: true },
+  { code: '+45', country: 'Denmark', flag: '🇩🇰', removeLeadingZero: true },
+  { code: '+358', country: 'Finland', flag: '🇫🇮', removeLeadingZero: true },
+  { code: '+353', country: 'Ireland', flag: '🇮🇪', removeLeadingZero: true },
+  { code: '+351', country: 'Portugal', flag: '🇵🇹', removeLeadingZero: true },
+  { code: '+30', country: 'Greece', flag: '🇬🇷', removeLeadingZero: true },
+  { code: '+48', country: 'Poland', flag: '🇵🇱', removeLeadingZero: true },
+  { code: '+81', country: 'Japan', flag: '🇯🇵', removeLeadingZero: true },
+  { code: '+82', country: 'South Korea', flag: '🇰🇷', removeLeadingZero: true },
+  { code: '+86', country: 'China', flag: '🇨🇳', removeLeadingZero: true }, // Landlines only
+  { code: '+91', country: 'India', flag: '🇮🇳', removeLeadingZero: true }, // Landlines only
+  { code: '+65', country: 'Singapore', flag: '🇸🇬', removeLeadingZero: false }, // No trunk prefix
+  { code: '+60', country: 'Malaysia', flag: '🇲🇾', removeLeadingZero: true },
+  { code: '+66', country: 'Thailand', flag: '🇹🇭', removeLeadingZero: true },
+  { code: '+62', country: 'Indonesia', flag: '🇮🇩', removeLeadingZero: true },
+  { code: '+63', country: 'Philippines', flag: '🇵🇭', removeLeadingZero: true },
+  { code: '+84', country: 'Vietnam', flag: '🇻🇳', removeLeadingZero: true },
+  { code: '+971', country: 'UAE', flag: '🇦🇪', removeLeadingZero: false }, // No trunk prefix
+  { code: '+966', country: 'Saudi Arabia', flag: '🇸🇦', removeLeadingZero: false }, // No trunk prefix
+  { code: '+55', country: 'Brazil', flag: '🇧🇷', removeLeadingZero: true },
+  { code: '+52', country: 'Mexico', flag: '🇲🇽', removeLeadingZero: true },
+  { code: '+54', country: 'Argentina', flag: '🇦🇷', removeLeadingZero: true },
+  { code: '+56', country: 'Chile', flag: '🇨🇱', removeLeadingZero: true },
+  { code: '+57', country: 'Colombia', flag: '🇨🇴', removeLeadingZero: true },
 ];
 
 export default function PhoneInput({ value = '', onChange, placeholder, className = '', error, ...restProps }) {
@@ -59,12 +61,24 @@ export default function PhoneInput({ value = '', onChange, placeholder, classNam
       // Try to find matching country code
       const matchedCode = COUNTRY_CODES.find(country => value.startsWith(country.code));
       if (matchedCode) {
-        const newLocalNumber = value.substring(matchedCode.code.length).trim();
+        let newLocalNumber = value.substring(matchedCode.code.length).trim();
+        // Remove leading 0 only if this country uses it as a trunk prefix
+        // In international format, leading zeros from area codes are omitted for these countries
+        // Example: +61 02 1234 5678 should become +61 2 1234 5678
+        if (matchedCode.removeLeadingZero && newLocalNumber.startsWith('0')) {
+          newLocalNumber = newLocalNumber.substring(1);
+        }
         setSelectedCountryCode(matchedCode.code);
         setLocalNumber(newLocalNumber);
       } else {
         // If no match, assume it's just a local number
-        setLocalNumber(value);
+        // If a country code is already selected and number starts with 0, remove it only if that country uses 0 as trunk prefix
+        let localValue = value;
+        const selectedCountry = COUNTRY_CODES.find(c => c.code === selectedCountryCode);
+        if (selectedCountry?.removeLeadingZero && localValue.startsWith('0')) {
+          localValue = localValue.substring(1);
+        }
+        setLocalNumber(localValue);
       }
     } else {
       setLocalNumber('');
@@ -97,7 +111,17 @@ export default function PhoneInput({ value = '', onChange, placeholder, classNam
 
   const handleLocalNumberChange = (e) => {
     // Only allow digits, spaces, dashes, and parentheses
-    const cleaned = e.target.value.replace(/[^\d\s\-()]/g, '');
+    let cleaned = e.target.value.replace(/[^\d\s\-()]/g, '');
+    
+    // Remove leading 0 only for countries that use it as a trunk prefix
+    // In international format, leading zeros from area codes are omitted for these countries
+    // Example: Australian (02 1234 5678) becomes +61 2 1234 5678 (0 removed)
+    // But for countries like Italy or US/Canada, the 0 should be kept or doesn't exist
+    const selectedCountry = COUNTRY_CODES.find(c => c.code === selectedCountryCode);
+    if (selectedCountry?.removeLeadingZero && cleaned.startsWith('0')) {
+      cleaned = cleaned.substring(1);
+    }
+    
     setLocalNumber(cleaned);
     // Notify parent immediately
     notifyParent(selectedCountryCode, cleaned);

@@ -75,6 +75,17 @@ export const API_ENDPOINTS = {
     UPDATE: (id) => `${API_BASE_URL}/api/interactions/${id}`,
     DELETE: (id) => `${API_BASE_URL}/api/interactions/${id}`,
   },
+  BUSINESSES: {
+    CREATE: `${API_BASE_URL}/api/businesses`,
+    GET_BY_ID: (id) => `${API_BASE_URL}/api/businesses/${id}`,
+    GET_BY_SLUG: (slug) => `${API_BASE_URL}/api/businesses/slug/${slug}`,
+    GET_USER_BUSINESSES: `${API_BASE_URL}/api/user/businesses`,
+    UPDATE: (id) => `${API_BASE_URL}/api/businesses/${id}`,
+    DELETE: (id) => `${API_BASE_URL}/api/businesses/${id}`,
+    GET_POSTS: (id) => `${API_BASE_URL}/api/businesses/${id}/posts`,
+    SEARCH: (query, page = 1, limit = 20) => 
+      `${API_BASE_URL}/api/businesses/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`,
+  },
   TEST: {
     ALL: `${API_BASE_URL}/api/test/all`,
     USER: `${API_BASE_URL}/api/test/user`,

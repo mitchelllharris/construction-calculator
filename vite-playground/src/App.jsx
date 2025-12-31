@@ -1,6 +1,7 @@
 import './App.css'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext.jsx'
+import { ProfileSwitcherProvider } from './contexts/ProfileSwitcherContext.jsx'
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx'
 import NavBar from './components/NavBar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
@@ -21,6 +22,10 @@ import Register from './pages/Register.jsx'
 import Settings from './pages/Settings.jsx'
 import Clients from './pages/Clients.jsx'
 import FindPeople from './pages/FindPeople.jsx'
+import CreateBusiness from './pages/CreateBusiness.jsx'
+import Business from './pages/Business.jsx'
+import EditBusiness from './pages/EditBusiness.jsx'
+import MyBusinesses from './pages/MyBusinesses.jsx'
 import VerifyEmail from './pages/VerifyEmail.jsx'
 import ResendVerification from './pages/ResendVerification.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
@@ -44,6 +49,24 @@ function AppContent() {
         <Route path="/profile/:username/activity" element={<Activity />}/>
         <Route path="/profile/:username" element={<Profile />}/>
         <Route path="/profile/id/:id" element={<Profile />}/>
+        <Route path="/business/:slug" element={<Business />}/>
+        <Route path="/business/id/:id" element={<Business />}/>
+        <Route 
+          path="/business/:slug/edit" 
+          element={
+            <ProtectedRoute>
+              <EditBusiness />
+            </ProtectedRoute>
+          }
+        />
+        <Route 
+          path="/business/id/:id/edit" 
+          element={
+            <ProtectedRoute>
+              <EditBusiness />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/post/:postId" element={<Post />}/>
         <Route path="/login" element={<Login />}/>
         <Route path="/register" element={<Register />}/>
@@ -101,6 +124,22 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route 
+            path="/create-business" 
+            element={
+              <ProtectedRoute>
+                <CreateBusiness />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/my-businesses" 
+            element={
+              <ProtectedRoute>
+                <MyBusinesses />
+              </ProtectedRoute>
+            }
+          />
           
           {/* 404 Not Found - Catch all route */}
           <Route path="*" element={<NotFound />} />
@@ -116,7 +155,9 @@ function App() {
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
-            <AppContent />
+            <ProfileSwitcherProvider>
+              <AppContent />
+            </ProfileSwitcherProvider>
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

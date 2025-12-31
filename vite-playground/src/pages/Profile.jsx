@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { get } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
 import LoadingPage from '../components/LoadingPage';
@@ -30,6 +31,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const { user: currentUser, updateProfile, fetchUserProfile } = useAuth();
   const { showError, showSuccess } = useToast();
+  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
   
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -379,6 +381,41 @@ export default function Profile() {
     profile.location?.country
   ].filter(Boolean).join(', ');
 
+  const getGoogleMapsUrl = () => {
+    // Check if it's a business (for future implementation)
+    const isBusiness = profile.businessName && profile.businessName.trim() !== '';
+    
+    // TODO: For businesses with Google Business listing
+    // Future: Check if profile has googleBusinessPlaceId or similar field
+    // if (isBusiness && profile.googleBusinessPlaceId) {
+    //   return `https://www.google.com/maps/place/?q=place_id:${profile.googleBusinessPlaceId}`;
+    // }
+    
+    // For now, treat all as regular locations (user profiles and businesses without listings)
+    
+    // If we have coordinates, use them for precise location
+    if (profile.location?.coordinates?.lat && profile.location?.coordinates?.lng) {
+      return `https://www.google.com/maps?q=${profile.location.coordinates.lat},${profile.location.coordinates.lng}`;
+    }
+    
+    // If we have a placeId, use it (works for both regular places and business listings)
+    if (profile.location?.placeId) {
+      return `https://www.google.com/maps/place/?q=place_id:${profile.location.placeId}`;
+    }
+    
+    // If we have formatted address, use it
+    if (profile.location?.formattedAddress) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.location.formattedAddress)}`;
+    }
+    
+    // Fall back to city/state/country
+    if (locationString) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationString)}`;
+    }
+    
+    return null;
+  };
+
   // Extract all images from portfolio, bio, and posts for photo gallery
   const getAllPortfolioImages = () => {
     const images = [];
@@ -481,7 +518,7 @@ export default function Profile() {
           <div className="p-6">
             <div className="flex flex-col md:flex-row gap-6">
               {/* Avatar */}
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 {isOwnProfile ? (
                   <div 
                     className="relative w-32 h-32 rounded-full border-4 border-white shadow-lg overflow-hidden bg-blue-500 flex items-center justify-center text-white text-4xl font-semibold cursor-pointer group"
@@ -534,10 +571,21 @@ export default function Profile() {
                       return null;
                     })()}
                     {locationString && (
-                      <div className="flex items-center gap-2 text-gray-600 mt-2">
+                      <a
+                        href={getGoogleMapsUrl() || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-gray-600 mt-2 hover:text-blue-600 transition-colors cursor-pointer"
+                        onClick={(e) => {
+                          const url = getGoogleMapsUrl();
+                          if (!url) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
                         <MdLocationOn size={18} />
                         <span>{locationString}</span>
-                      </div>
+                      </a>
                     )}
                   </div>
                   {isOwnProfile && (
@@ -646,11 +694,13 @@ export default function Profile() {
               return true;
             })() && (
               <PostForm
-                profileUserId={profile.id}
+                profileUserId={isOwnProfile && isUserProfile ? activeProfile?.id : profile.id}
+                businessId={isOwnProfile && isBusinessProfile ? activeProfile?.id : null}
                 onPostCreated={() => {
                   setPostsRefreshKey(prev => prev + 1);
                 }}
                 isOwnProfile={isOwnProfile}
+                useActiveProfile={isOwnProfile}
               />
             )}
 
@@ -679,7 +729,7 @@ export default function Profile() {
                 </div>
               )}
               {profile.bio && (
-                <p className="text-gray-700 whitespace-pre-wrap break-words">{profile.bio}</p>
+                <p className="text-gray-700 whitespace-pre-wrap wrap-break-word">{profile.bio}</p>
               )}
             </EditableSection>
 
@@ -687,6 +737,7 @@ export default function Profile() {
             <ActivityFeed
               key={postsRefreshKey}
               profileId={profile?.id}
+              businessId={null}
               isOwnProfile={isOwnProfile}
               username={username || profile?.username}
               showViewAll={true}

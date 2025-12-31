@@ -148,6 +148,7 @@ require('./app/routes/contactform.routes')(app);
 require('./app/routes/contact.routes')(app);
 require('./app/routes/interaction.routes')(app);
 require('./app/routes/post.routes')(app);
+require('./app/routes/business.routes')(app);
 
 // define a simple GET route on the root path
 app.get('/', (req, res) => {

@@ -12,6 +12,7 @@ db.contact = require('./contact.model.js');
 db.interaction = require('./interaction.model.js');
 db.profileView = require('./profileView.model.js');
 db.post = require('./post.model.js');
+db.business = require('./business.model.js');
 
 db.ROLES = [
     'user',

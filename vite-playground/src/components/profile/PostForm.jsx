@@ -9,10 +9,16 @@ import { GiphyFetch } from '@giphy/js-fetch-api';
 import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
+import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
 import LocationInput from '../LocationInput';
 import Button from '../Button';
 
-export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = false }) {
+export default function PostForm({ profileUserId, businessId, onPostCreated, isOwnProfile = false, useActiveProfile = false }) {
+  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  
+  // Use active profile if useActiveProfile is true, otherwise use provided props
+  const finalProfileUserId = useActiveProfile && isUserProfile ? activeProfile?.id : (profileUserId || null);
+  const finalBusinessId = useActiveProfile && isBusinessProfile ? activeProfile?.id : (businessId || null);
   const [content, setContent] = useState('');
   const [images, setImages] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -137,7 +143,7 @@ export default function PostForm({ profileUserId, onPostCreated, isOwnProfile = 
           'x-access-token': token,
         },
         body: JSON.stringify({
-          profileUserId,
+          ...(finalBusinessId ? { businessId: finalBusinessId } : { profileUserId: finalProfileUserId }),
           content: content.trim() || '', // Send empty string if no content
           images,
           videos,

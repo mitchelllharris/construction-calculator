@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useFormValidation } from '../hooks/useFormValidation';
@@ -12,12 +13,17 @@ import LocationInput from '../components/LocationInput';
 import Button from '../components/Button';
 import SkeletonCard from '../components/SkeletonCard';
 import Spinner from '../components/Spinner';
+import { get, del } from '../utils/api';
+import { MdBusiness, MdEdit, MdDelete, MdAdd } from 'react-icons/md';
 
 export default function Settings() {
+  const navigate = useNavigate();
   const { user, updateProfile, changePassword, fetchUserProfile } = useAuth();
   const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
+  const [businesses, setBusinesses] = useState([]);
+  const [loadingBusinesses, setLoadingBusinesses] = useState(false);
   const [emailPrivacy, setEmailPrivacy] = useState('private');
   const [privacySettings, setPrivacySettings] = useState({
     phone: 'private',
@@ -103,6 +109,40 @@ export default function Settings() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Fetch businesses when businesses tab is active
+  useEffect(() => {
+    if (activeTab === 'businesses') {
+      fetchBusinesses();
+    }
+  }, [activeTab]);
+
+  const fetchBusinesses = async () => {
+    setLoadingBusinesses(true);
+    try {
+      const data = await get(API_ENDPOINTS.BUSINESSES.GET_USER_BUSINESSES);
+      setBusinesses(data.businesses || []);
+    } catch (error) {
+      showError(error.message || 'Failed to load businesses');
+      setBusinesses([]);
+    } finally {
+      setLoadingBusinesses(false);
+    }
+  };
+
+  const handleDeleteBusiness = async (businessId) => {
+    if (!window.confirm('Are you sure you want to delete this business? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await del(API_ENDPOINTS.BUSINESSES.DELETE(businessId));
+      showSuccess('Business deleted successfully');
+      fetchBusinesses(); // Refresh list
+    } catch (error) {
+      showError(error.message || 'Failed to delete business');
+    }
+  };
 
   // Validation functions
   const validateProfileField = (fieldName, value) => {
@@ -354,6 +394,16 @@ export default function Settings() {
                 }`}
               >
                 Password
+              </button>
+              <button
+                onClick={() => setActiveTab('businesses')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'businesses'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Businesses
               </button>
             </nav>
           </div>
@@ -838,6 +888,101 @@ export default function Settings() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Businesses Tab */}
+      {activeTab === 'businesses' && (
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold">My Businesses</h2>
+            <Button
+              onClick={() => navigate('/create-business')}
+              className="flex items-center gap-2"
+            >
+              <MdAdd size={18} />
+              Create Business
+            </Button>
+          </div>
+
+          {loadingBusinesses ? (
+            <div className="flex justify-center py-8">
+              <Spinner />
+            </div>
+          ) : businesses.length === 0 ? (
+            <div className="text-center py-12">
+              <MdBusiness size={48} className="mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-600 mb-4">You don't have any businesses yet.</p>
+              <Button
+                onClick={() => navigate('/create-business')}
+                className="flex items-center gap-2 mx-auto"
+              >
+                <MdAdd size={18} />
+                Create Your First Business
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {businesses.map((business) => (
+                <div
+                  key={business._id || business.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                        {business.businessName}
+                      </h3>
+                      {business.trade && (
+                        <p className="text-gray-600 text-sm mb-2">{business.trade}</p>
+                      )}
+                      {business.description && (
+                        <p className="text-gray-600 text-sm line-clamp-2">{business.description}</p>
+                      )}
+                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                        {business.location?.city && business.location?.state && (
+                          <span>
+                            {business.location.city}, {business.location.state}
+                          </span>
+                        )}
+                        <span>
+                          Created {new Date(business.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => {
+                          const businessId = business.businessSlug || business._id || business.id;
+                          navigate(`/business/${businessId}`);
+                        }}
+                        className="px-3 py-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => {
+                          const businessId = business.businessSlug || business._id || business.id;
+                          navigate(`/business/${businessId}/edit`);
+                        }}
+                        className="px-3 py-2 text-gray-700 hover:bg-gray-100 rounded transition-colors flex items-center gap-1"
+                      >
+                        <MdEdit size={18} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBusiness(business._id || business.id)}
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded transition-colors flex items-center gap-1"
+                      >
+                        <MdDelete size={18} />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 const db = require('../models');
 const Post = db.post;
 const User = db.user;
+const Business = db.business;
 const logger = require('../utils/logger');
 
 // Helper function to build comment tree from flat posts
@@ -40,15 +41,22 @@ function formatPostWithComments(post, comments) {
     return postObj;
 }
 
+// Export helper functions for use in other controllers
+exports.buildCommentTree = buildCommentTree;
+exports.formatPostWithComments = formatPostWithComments;
+
 // Create a new post
 exports.createPost = async (req, res) => {
     try {
-        const { profileUserId, content, images, videos, replySettings, poll, location, taggedUsers, parentPostId, parentCommentId } = req.body;
+        const { profileUserId, businessId, content, images, videos, replySettings, poll, location, taggedUsers, parentPostId, parentCommentId } = req.body;
         const authorUserId = req.userId;
 
-        // Validate required fields
-        if (!profileUserId) {
-            return res.status(400).send({ message: "Profile user ID is required" });
+        // Validate required fields - either profileUserId or businessId must be provided
+        if (!profileUserId && !businessId) {
+            return res.status(400).send({ message: "Profile user ID or Business ID is required" });
+        }
+        if (profileUserId && businessId) {
+            return res.status(400).send({ message: "Cannot specify both profileUserId and businessId" });
         }
 
         // If this is a comment/reply, content is required
@@ -68,20 +76,37 @@ exports.createPost = async (req, res) => {
             }
         }
 
-        // Check if profile user exists
-        const profileUser = await User.findById(profileUserId);
-        if (!profileUser) {
-            return res.status(404).send({ message: "Profile user not found" });
+        // Check if profile user or business exists
+        let finalProfileUserId = profileUserId || null;
+        let finalBusinessId = businessId || null;
+
+        if (profileUserId) {
+            const profileUser = await User.findById(profileUserId);
+            if (!profileUser) {
+                return res.status(404).send({ message: "Profile user not found" });
+            }
+        } else if (businessId) {
+            const business = await Business.findById(businessId);
+            if (!business) {
+                return res.status(404).send({ message: "Business not found" });
+            }
+            // Check if business is active
+            if (!business.isActive) {
+                // Only owner can post on inactive businesses
+                if (business.ownerId.toString() !== authorUserId) {
+                    return res.status(403).send({ message: "You don't have permission to post on this business" });
+                }
+            }
         }
 
-        // For comments/replies, inherit profileUserId from parent post
-        let finalProfileUserId = profileUserId;
+        // For comments/replies, inherit profileUserId/businessId from parent post
         if (parentPostId) {
             const parentPost = await Post.findById(parentPostId);
             if (!parentPost) {
                 return res.status(404).send({ message: "Parent post not found" });
             }
-            finalProfileUserId = parentPost.profileUserId;
+            finalProfileUserId = parentPost.profileUserId || null;
+            finalBusinessId = parentPost.businessId || null;
         } else if (parentCommentId) {
             const parentComment = await Post.findById(parentCommentId);
             if (!parentComment) {
@@ -94,19 +119,24 @@ exports.createPost = async (req, res) => {
                 if (!rootPost) break;
             }
             if (rootPost) {
-                finalProfileUserId = rootPost.profileUserId;
+                finalProfileUserId = rootPost.profileUserId || null;
+                finalBusinessId = rootPost.businessId || null;
             }
         }
 
-        // Check privacy settings for posting
-        const canPost = checkPostPrivacy(profileUser, authorUserId, finalProfileUserId);
-        if (!canPost) {
-            return res.status(403).send({ message: "You don't have permission to post on this profile" });
+        // Check privacy settings for posting (only for user profiles)
+        if (finalProfileUserId) {
+            const profileUser = await User.findById(finalProfileUserId);
+            const canPost = checkPostPrivacy(profileUser, authorUserId, finalProfileUserId);
+            if (!canPost) {
+                return res.status(403).send({ message: "You don't have permission to post on this profile" });
+            }
         }
 
         // Create post
         const postData = {
             profileUserId: finalProfileUserId,
+            businessId: finalBusinessId,
             authorUserId,
             content: content ? content.trim() : '',
             images: images || [],
@@ -316,8 +346,22 @@ exports.deletePost = async (req, res) => {
             return res.status(404).send({ message: "Post not found" });
         }
 
-        // Only author or profile owner can delete
-        if (post.authorUserId.toString() !== userId && post.profileUserId.toString() !== userId) {
+        // Always allow the author to delete their own post
+        if (post.authorUserId.toString() === userId) {
+            // Author can delete - proceed
+        } else if (post.businessId) {
+            // Post is on a business profile - check if user owns that business
+            const business = await Business.findById(post.businessId);
+            if (!business || business.ownerId.toString() !== userId) {
+                return res.status(403).send({ message: "You don't have permission to delete this post" });
+            }
+        } else if (post.profileUserId) {
+            // Post is on a user profile - check if user owns that profile
+            if (post.profileUserId.toString() !== userId) {
+                return res.status(403).send({ message: "You don't have permission to delete this post" });
+            }
+        } else {
+            // Post has neither profileUserId nor businessId - only author can delete
             return res.status(403).send({ message: "You don't have permission to delete this post" });
         }
 

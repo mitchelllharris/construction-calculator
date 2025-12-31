@@ -15,7 +15,7 @@ const LoadingSpinner = () => (
   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
 );
 
-export default function ActivityFeed({ profileId, isOwnProfile, username, showViewAll = true, limit = null }) {
+export default function ActivityFeed({ profileId, businessId, isOwnProfile, username, showViewAll = true, limit = null }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState(null); // { type: 'post' | 'comment', postId, commentId?, post: {...} }
@@ -25,16 +25,27 @@ export default function ActivityFeed({ profileId, isOwnProfile, username, showVi
   const location = useLocation();
 
   useEffect(() => {
-    if (profileId) {
+    if (profileId || businessId) {
       fetchPosts();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId]);
+  }, [profileId, businessId]);
 
   const fetchPosts = async () => {
     setLoading(true);
     try {
-      const data = await get(API_ENDPOINTS.PROFILE.GET_POSTS(profileId));
+      let data;
+      if (businessId) {
+        // Fetch posts for business
+        data = await get(API_ENDPOINTS.BUSINESSES.GET_POSTS(businessId));
+      } else if (profileId) {
+        // Fetch posts for user profile
+        data = await get(API_ENDPOINTS.PROFILE.GET_POSTS(profileId));
+      } else {
+        setPosts([]);
+        setLoading(false);
+        return;
+      }
       const allPosts = data.posts || [];
       // If limit is specified, only show that many posts
       setPosts(limit ? allPosts.slice(0, limit) : allPosts);
