@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MdDelete, MdCheckCircle } from 'react-icons/md';
 import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
 import ReactionPicker from './ReactionPicker';
@@ -24,7 +25,36 @@ export default function PostView({
   isPollEnded,
   formatDate
 }) {
+  const navigate = useNavigate();
   const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  
+  const getAuthorProfileUrl = (post) => {
+    if (post?.authorAccount) {
+      if (post.authorAccount.type === 'business' && post.authorAccount.slug) {
+        return `/business/${post.authorAccount.slug}`;
+      } else if (post.authorAccount.type === 'user' && post.authorAccount.username) {
+        return `/profile/${post.authorAccount.username}`;
+      }
+    }
+    
+    if (post?.postedAsBusinessId?.businessSlug) {
+      return `/business/${post.postedAsBusinessId.businessSlug}`;
+    }
+    
+    if (post?.authorUserId?.username) {
+      return `/profile/${post.authorUserId.username}`;
+    }
+    
+    return null;
+  };
+
+  const handleAuthorClick = (e) => {
+    e.stopPropagation();
+    const profileUrl = getAuthorProfileUrl(post);
+    if (profileUrl) {
+      navigate(profileUrl);
+    }
+  };
   
   // Check if user is the author
   const isAuthor = currentUser && (
@@ -65,19 +95,28 @@ export default function PostView({
       {/* Post Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          {getAuthorAvatar(post.authorUserId) ? (
+          {getAuthorAvatar(post.authorUserId, post) ? (
             <img
-              src={getAuthorAvatar(post.authorUserId)}
-              alt={getAuthorName(post.authorUserId)}
-              className="w-10 h-10 rounded-full object-cover"
+              src={getAuthorAvatar(post.authorUserId, post)}
+              alt={getAuthorName(post.authorUserId, post)}
+              className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={handleAuthorClick}
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-              {getAuthorName(post.authorUserId).charAt(0).toUpperCase()}
+            <div 
+              className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={handleAuthorClick}
+            >
+              {getAuthorName(post.authorUserId, post).charAt(0).toUpperCase()}
             </div>
           )}
           <div>
-            <p className="font-semibold text-gray-900">{getAuthorName(post.authorUserId)}</p>
+            <p 
+              className="font-semibold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+              onClick={handleAuthorClick}
+            >
+              {getAuthorName(post.authorUserId, post)}
+            </p>
             <p className="text-xs text-gray-500">{formatDate(post.createdAt)}</p>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
 import ReactionPicker from './ReactionPicker';
 import { MdArrowBack, MdShare, MdBookmarkBorder, MdReply, MdClose, MdPhotoLibrary, MdEmojiEmotions, MdGif, MdSend, MdTag, MdPoll, MdSearch } from 'react-icons/md';
 import EmojiPicker from 'emoji-picker-react';
@@ -10,6 +11,7 @@ import { Grid } from '@giphy/react-components';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 
 export default function CommentSection({ post, onUpdate, onNavigateToComment }) {
+  const navigate = useNavigate();
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyContent, setReplyContent] = useState('');
@@ -26,7 +28,36 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
   const [taggedUsers, setTaggedUsers] = useState([]);
   const fileInputRef = useRef(null);
   const { user: currentUser } = useAuth();
+  const { activeUserId } = useProfileSwitcher();
   const { showError, showSuccess } = useToast();
+
+  const getAuthorProfileUrl = (item) => {
+    if (item?.authorAccount) {
+      if (item.authorAccount.type === 'business' && item.authorAccount.slug) {
+        return `/business/${item.authorAccount.slug}`;
+      } else if (item.authorAccount.type === 'user' && item.authorAccount.username) {
+        return `/profile/${item.authorAccount.username}`;
+      }
+    }
+    
+    if (item?.postedAsBusinessId?.businessSlug) {
+      return `/business/${item.postedAsBusinessId.businessSlug}`;
+    }
+    
+    if (item?.authorUserId?.username || item?.userId?.username) {
+      return `/profile/${item.authorUserId?.username || item.userId?.username}`;
+    }
+    
+    return null;
+  };
+
+  const handleAuthorClick = (e, item) => {
+    e.stopPropagation();
+    const profileUrl = getAuthorProfileUrl(item);
+    if (profileUrl) {
+      navigate(profileUrl);
+    }
+  };
 
   // Initialize GIPHY API
   const giphyApiKey = import.meta.env.VITE_GIPHY_API_KEY || '';
@@ -34,15 +65,79 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
     return giphyApiKey ? new GiphyFetch(giphyApiKey) : null;
   }, [giphyApiKey]);
 
-  const getAuthorName = (author) => {
-    if (!author) return 'Unknown';
-    if (author.firstName && author.lastName) {
+  const getAuthorName = (author, post) => {
+    // New format: Use authorAccount if available
+    if (post?.authorAccount) {
+      return post.authorAccount.name || 'Unknown';
+    }
+    
+    // Legacy format: Check postedAsBusinessId first
+    if (post?.postedAsBusinessId) {
+      const business = post.postedAsBusinessId;
+      if (business.businessName) {
+        return business.businessName;
+      }
+    }
+    
+    // Fallback: If post has a businessId and author owns that business, show business name
+    if (post?.businessId) {
+      const business = post.businessId;
+      const authorIdStr = author?._id?.toString() || author?.id?.toString() || author?.toString();
+      const ownerIdStr = business.ownerId?._id?.toString() || business.ownerId?.id?.toString() || business.ownerId?.toString();
+      
+      if (ownerIdStr === authorIdStr && business.businessName) {
+        return business.businessName;
+      }
+    }
+    
+    // Default to user name
+    if (author?.firstName && author?.lastName) {
       return `${author.firstName} ${author.lastName}`;
     }
-    return author.username || 'Unknown';
+    return author?.username || 'Unknown';
   };
 
-  const getAuthorAvatar = (author) => {
+  const getAuthorAvatar = (author, post) => {
+    // New format: Use authorAccount if available (even if avatar is null, don't fall back)
+    if (post?.authorAccount) {
+      // If authorAccount exists, use its avatar (even if null) - don't fall back to legacy
+      if (post.authorAccount.avatar) {
+        const avatarUrl = post.authorAccount.avatar.startsWith('http') 
+          ? post.authorAccount.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${post.authorAccount.avatar}`;
+        return avatarUrl;
+      }
+      // If authorAccount exists but avatar is null, return null (don't fall back)
+      return null;
+    }
+    
+    // Legacy format: Only use if authorAccount doesn't exist
+    // Check postedAsBusinessId first
+    if (post?.postedAsBusinessId) {
+      const business = post.postedAsBusinessId;
+      if (business.avatar) {
+        const avatarUrl = business.avatar.startsWith('http') 
+          ? business.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${business.avatar}`;
+        return avatarUrl;
+      }
+    }
+    
+    // Fallback: If post has a businessId and author owns that business, show business avatar
+    if (post?.businessId) {
+      const business = post.businessId;
+      const authorIdStr = author?._id?.toString() || author?.id?.toString() || author?.toString();
+      const ownerIdStr = business.ownerId?._id?.toString() || business.ownerId?.id?.toString() || business.ownerId?.toString();
+      
+      if (ownerIdStr === authorIdStr && business.avatar) {
+        const avatarUrl = business.avatar.startsWith('http') 
+          ? business.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${business.avatar}`;
+        return avatarUrl;
+      }
+    }
+    
+    // Default to user avatar (only if no authorAccount)
     if (author?.avatar) {
       const avatarUrl = author.avatar.startsWith('http') 
         ? author.avatar 
@@ -219,6 +314,7 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
         },
         body: JSON.stringify({ 
           content: newComment.trim(),
+          authorAccountId: activeUserId, // Send active profile's accountId
           images,
           videos,
           poll: showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2 ? {
@@ -266,7 +362,8 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
           'x-access-token': token,
         },
         body: JSON.stringify({ 
-          content: replyContent.trim()
+          content: replyContent.trim(),
+          authorAccountId: activeUserId // Send active profile's accountId
         }),
       });
 
@@ -443,24 +540,33 @@ export default function CommentSection({ post, onUpdate, onNavigateToComment }) 
       >
         <div className="p-4">
           <div className="flex gap-3">
-            {getAuthorAvatar(item.userId) ? (
-                  <img
-                src={getAuthorAvatar(item.userId)}
-                alt={getAuthorName(item.userId)}
-                className="w-12 h-12 rounded-full object-cover shrink-0"
-                  />
-                ) : (
-              <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold shrink-0">
-                {getAuthorName(item.userId).charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
+            {getAuthorAvatar(item.userId || item.authorUserId, item) ? (
+              <img
+                src={getAuthorAvatar(item.userId || item.authorUserId, item)}
+                alt={getAuthorName(item.userId || item.authorUserId, item)}
+                className="w-12 h-12 rounded-full object-cover shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={(e) => handleAuthorClick(e, item)}
+              />
+            ) : (
+              <div 
+                className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={(e) => handleAuthorClick(e, item)}
+              >
+                {getAuthorName(item.userId || item.authorUserId, item).charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <p className="font-bold text-gray-900">{getAuthorName(item.authorUserId || item.userId)}</p>
+                <p 
+                  className="font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                  onClick={(e) => handleAuthorClick(e, item)}
+                >
+                  {getAuthorName(item.authorUserId || item.userId, item)}
+                </p>
                 <p className="text-sm text-gray-500">@{(item.authorUserId || item.userId)?.username || 'user'}</p>
                 <span className="text-gray-500">·</span>
                 <p className="text-sm text-gray-500">{formatDate(item.createdAt || item.commentedAt || item.repliedAt)}</p>
-                    </div>
+              </div>
               <p className="text-gray-900 mb-3 whitespace-pre-wrap wrap-break-word">{item.content}</p>
               
               <div className="flex items-center gap-6 text-gray-500">
