@@ -3,6 +3,18 @@ const mongoose = require('mongoose');
 const Business = mongoose.model(
     'Business',
     new mongoose.Schema({
+        accountId: {
+            type: Number,
+            unique: true,
+            sparse: true,
+            index: true
+        },
+        pageId: {
+            type: String,
+            unique: true,
+            sparse: true,
+            index: true
+        },
         ownerId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',

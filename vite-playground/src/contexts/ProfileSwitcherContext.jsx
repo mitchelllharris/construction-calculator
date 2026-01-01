@@ -15,7 +15,7 @@ export const useProfileSwitcher = () => {
 
 export const ProfileSwitcherProvider = ({ children }) => {
   const { user, isAuthenticated } = useAuth();
-  const [activeProfile, setActiveProfile] = useState(null); // { type: 'user' | 'business', id: string, name: string, avatar?: string }
+  const [activeProfile, setActiveProfile] = useState(null); // { type: 'user' | 'business', id: string, accountId: number, name: string, avatar?: string, pageId?: string }
   const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,8 +62,10 @@ export const ProfileSwitcherProvider = ({ children }) => {
           setActiveProfile({
             type: 'user',
             id: user.id,
+            accountId: user.accountId || null,
             name: user.username || `${user.firstName} ${user.lastName}`,
             avatar: user.avatar,
+            pageId: user.pageId || null,
           });
         }
       } catch (error) {
@@ -71,8 +73,10 @@ export const ProfileSwitcherProvider = ({ children }) => {
         setActiveProfile({
           type: 'user',
           id: user.id,
+          accountId: user.accountId || null,
           name: user.username || `${user.firstName} ${user.lastName}`,
           avatar: user.avatar,
+          pageId: user.pageId || null,
         });
       }
     } else {
@@ -80,8 +84,10 @@ export const ProfileSwitcherProvider = ({ children }) => {
       setActiveProfile({
         type: 'user',
         id: user.id,
+        accountId: user.accountId || null,
         name: user.username || `${user.firstName} ${user.lastName}`,
         avatar: user.avatar,
+        pageId: user.pageId || null,
       });
     }
 
@@ -92,64 +98,52 @@ export const ProfileSwitcherProvider = ({ children }) => {
   useEffect(() => {
     if (activeProfile?.type === 'business' && businesses.length > 0 && user) {
       const businessId = String(activeProfile.id || '');
-      console.log('Verifying business profile. Looking for ID:', businessId, 'Active profile:', activeProfile);
-      
-      // Compare IDs as strings to handle ObjectId vs string mismatch
       const businessExists = businesses.find(b => {
         const bId = String(b._id || b.id || '');
-        const matches = bId === businessId;
-        if (matches) {
-          console.log('Found matching business:', b.businessName, 'ID:', bId);
-        }
-        return matches;
+        return bId === businessId;
       });
       
       if (!businessExists) {
-        // Business no longer exists, switch to user profile
-        console.log('Business not found, switching to user profile. Looking for:', businessId, 'Available:', businesses.map(b => ({ name: b.businessName, id: String(b._id || b.id) })));
         setActiveProfile({
           type: 'user',
           id: user.id,
+          accountId: user.accountId || null,
           name: user.username || `${user.firstName} ${user.lastName}`,
           avatar: user.avatar,
+          pageId: user.pageId || null,
         });
       } else {
-        // Always update with fresh business data to ensure consistency
         const businessIdStr = String(businessExists._id || businessExists.id);
         const currentIdStr = String(activeProfile.id || '');
         
-        // Update if business info has changed or ID format differs
         const hasChanged = 
           currentIdStr !== businessIdStr ||
           activeProfile.name !== businessExists.businessName ||
           activeProfile.avatar !== businessExists.avatar ||
-          activeProfile.slug !== businessExists.businessSlug;
+          activeProfile.slug !== businessExists.businessSlug ||
+          activeProfile.accountId !== businessExists.accountId ||
+          activeProfile.pageId !== businessExists.pageId;
         
         if (hasChanged) {
-          console.log('Updating active business profile:', businessExists.businessName, 'New ID:', businessIdStr);
           setActiveProfile({
             type: 'business',
             id: businessExists._id || businessExists.id,
+            accountId: businessExists.accountId || null,
             name: businessExists.businessName,
             avatar: businessExists.avatar,
             slug: businessExists.businessSlug,
+            pageId: businessExists.pageId || null,
           });
-        } else {
-          console.log('Business profile is up to date:', businessExists.businessName);
         }
       }
-    } else if (activeProfile?.type === 'business' && businesses.length === 0) {
-      console.log('Businesses not loaded yet, waiting...');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businesses]);
 
   // Switch to a profile
   const switchProfile = useCallback((profile) => {
-    console.log('switchProfile called with:', profile);
     setActiveProfile(profile);
     localStorage.setItem('activeProfile', JSON.stringify(profile));
-    console.log('Active profile set to:', profile);
   }, []);
 
   // Switch to user profile
@@ -158,8 +152,10 @@ export const ProfileSwitcherProvider = ({ children }) => {
     const profile = {
       type: 'user',
       id: user.id,
+      accountId: user.accountId || null,
       name: user.username || `${user.firstName} ${user.lastName}`,
       avatar: user.avatar,
+      pageId: user.pageId || null,
     };
     switchProfile(profile);
   }, [user, switchProfile]);
@@ -176,12 +172,13 @@ export const ProfileSwitcherProvider = ({ children }) => {
     const profile = {
       type: 'business',
       id: businessId,
+      accountId: business.accountId || null,
       name: business.businessName || business.name || 'Business',
       avatar: business.avatar || null,
       slug: business.businessSlug || business.slug || null,
+      pageId: business.pageId || null,
     };
     
-    console.log('Switching to business profile:', profile);
     switchProfile(profile);
   }, [switchProfile]);
 
@@ -190,8 +187,12 @@ export const ProfileSwitcherProvider = ({ children }) => {
     fetchBusinesses();
   }, [fetchBusinesses]);
 
+  // Computed: activeUserId is the accountId of the active profile
+  const activeUserId = activeProfile?.accountId || null;
+
   const value = {
     activeProfile,
+    activeUserId, // The accountId of the currently active profile
     businesses,
     loading,
     switchProfile,

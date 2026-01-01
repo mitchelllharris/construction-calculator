@@ -20,6 +20,23 @@ exports.getProfile = async (req, res) => {
         // Convert roles into array format
         const authorities = user.roles.map(role => "ROLE_" + role.name.toUpperCase());
 
+        // Get pageId for this user
+        let pageId = user.pageId || null;
+        if (!pageId && user.accountId) {
+            const Page = db.page;
+            // Migration script uses 'profile' as pageType, but we should support both
+            const page = await Page.findOne({ 
+                accountId: String(user.accountId), 
+                pageType: { $in: ['user', 'profile'] } 
+            });
+            if (page) {
+                pageId = page.pageId;
+                // Update user with pageId for future requests
+                user.pageId = pageId;
+                await user.save();
+            }
+        }
+
         return res.status(200).json({
             id: user._id,
             username: user.username,
@@ -47,6 +64,8 @@ exports.getProfile = async (req, res) => {
             emailPrivacy: user.emailPrivacy || 'private',
             privacySettings: user.privacySettings || {},
             roles: authorities,
+            accountId: user.accountId || null, // Add accountId
+            pageId: pageId, // Add pageId
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         });
@@ -372,6 +391,23 @@ exports.getPublicProfile = async (req, res) => {
             return res.status(404).send({ message: "User not found" });
         }
 
+        // Get pageId for this user
+        let pageId = user.pageId || null;
+        if (!pageId && user.accountId) {
+            const Page = db.page;
+            // Migration script uses 'profile' as pageType, but we should support both
+            const page = await Page.findOne({ 
+                accountId: String(user.accountId), 
+                pageType: { $in: ['user', 'profile'] } 
+            });
+            if (page) {
+                pageId = page.pageId;
+                // Update user with pageId for future requests
+                user.pageId = pageId;
+                await user.save();
+            }
+        }
+
         const privacySettings = user.privacySettings || {};
         
         // Check privacy for each field
@@ -398,6 +434,8 @@ exports.getPublicProfile = async (req, res) => {
             firstName: user.firstName || "",
             lastName: user.lastName || "",
             avatar: user.avatar || "",
+            accountId: user.accountId || null, // Add accountId
+            pageId: pageId, // Add pageId
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };

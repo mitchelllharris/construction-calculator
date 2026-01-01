@@ -69,8 +69,6 @@ export default function Business() {
       }
 
       const businessData = await get(url);
-      console.log('DEBUG: Fetched business data:', businessData);
-      console.log('DEBUG: googleBusinessProfileUrl in fetched data:', businessData?.googleBusinessProfileUrl);
       setBusiness(businessData);
     } catch (error) {
       showError(error.message || 'Failed to load business');
@@ -93,28 +91,14 @@ export default function Business() {
   };
 
   const getGoogleMapsUrl = () => {
-    // DEBUG: Log business data
-    console.log('DEBUG: Business data:', business);
-    console.log('DEBUG: googleBusinessProfileUrl:', business?.googleBusinessProfileUrl);
-    
-    // For businesses, prioritize Google Business Profile URL if provided
-    // Check this first before any location-based URLs
     const googleBusinessUrl = business?.googleBusinessProfileUrl?.trim();
-    console.log('DEBUG: Trimmed googleBusinessUrl:', googleBusinessUrl);
     
     if (googleBusinessUrl && googleBusinessUrl.length > 0) {
-      // Ensure it's a valid URL (starts with http:// or https://)
       if (googleBusinessUrl.startsWith('http://') || googleBusinessUrl.startsWith('https://')) {
-        console.log('DEBUG: Returning Google Business Profile URL:', googleBusinessUrl);
         return googleBusinessUrl;
       }
-      // If it doesn't have a protocol, add https://
-      const urlWithProtocol = `https://${googleBusinessUrl}`;
-      console.log('DEBUG: Returning Google Business Profile URL with protocol:', urlWithProtocol);
-      return urlWithProtocol;
+      return `https://${googleBusinessUrl}`;
     }
-    
-    console.log('DEBUG: No Google Business Profile URL, using location-based URL');
     
     // Check if they have Google Business listing place ID
     if (business?.location?.googleBusinessPlaceId) {
@@ -363,6 +347,7 @@ export default function Business() {
             {/* Post Form - Visible to owner */}
             {isOwner && business?._id && (
               <PostForm
+                pageId={business?.pageId || null}
                 businessId={business._id}
                 onPostCreated={() => {
                   setPostsRefreshKey(prev => prev + 1);
@@ -390,6 +375,7 @@ export default function Business() {
             {business?._id && (
               <ActivityFeed
                 key={postsRefreshKey}
+                pageId={business?.pageId || null}
                 businessId={business._id}
                 isOwnProfile={isOwner}
                 username={business?.businessName}

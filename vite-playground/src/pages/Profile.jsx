@@ -53,8 +53,16 @@ export default function Profile() {
   const [postsRefreshKey, setPostsRefreshKey] = useState(0);
   const [posts, setPosts] = useState([]);
 
-  // Calculate isOwnProfile - needs to be before useEffect that uses it
-  const isOwnProfile = currentUser && profile && (currentUser.id === profile?.id || currentUser.username === profile?.username);
+  let isOwnProfile = false;
+  if (profile && activeProfile) {
+    if (isBusinessProfile && activeProfile?.type === 'business') {
+      isOwnProfile = String(profile?.id) === String(activeProfile?.id);
+    } else if (isUserProfile && activeProfile?.type === 'user') {
+      isOwnProfile = String(profile?.id) === String(activeProfile?.id) || profile?.username === activeProfile?.name;
+    }
+  } else if (profile && currentUser && !activeProfile) {
+    isOwnProfile = currentUser.id === profile?.id || currentUser.username === profile?.username;
+  }
 
   useEffect(() => {
     fetchProfile();
@@ -694,6 +702,10 @@ export default function Profile() {
               return true;
             })() && (
               <PostForm
+                pageId={isOwnProfile 
+                  ? (activeProfile?.pageId || profile?.pageId || null)
+                  : (profile?.pageId || null) // When posting to someone else's profile, MUST use their pageId
+                }
                 profileUserId={isOwnProfile && isUserProfile ? activeProfile?.id : profile.id}
                 businessId={isOwnProfile && isBusinessProfile ? activeProfile?.id : null}
                 onPostCreated={() => {
@@ -736,6 +748,7 @@ export default function Profile() {
             {/* Activity Feed */}
             <ActivityFeed
               key={postsRefreshKey}
+              pageId={profile?.pageId || null}
               profileId={profile?.id}
               businessId={null}
               isOwnProfile={isOwnProfile}

@@ -3,6 +3,18 @@ const mongoose = require('mongoose');
 const Post = mongoose.model(
     'Post',
     new mongoose.Schema({
+        // New unified fields
+        pageId: {
+            type: String,
+            required: false, // Will be required after migration
+            index: true
+        },
+        authorAccountId: {
+            type: Number,
+            required: false, // Will be required after migration
+            index: true
+        },
+        // Legacy fields - kept for migration compatibility
         profileUserId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
@@ -18,7 +30,13 @@ const Post = mongoose.model(
         authorUserId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true,
+            required: false, // Changed from required: true for migration
+            index: true
+        },
+        postedAsBusinessId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Business',
+            required: false,
             index: true
         },
         content: {

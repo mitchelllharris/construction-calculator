@@ -86,6 +86,11 @@ export const API_ENDPOINTS = {
     SEARCH: (query, page = 1, limit = 20) => 
       `${API_BASE_URL}/api/businesses/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`,
   },
+  PAGES: {
+    CREATE: `${API_BASE_URL}/api/pages`,
+    GET: (pageId) => `${API_BASE_URL}/api/pages/${pageId}`,
+    GET_POSTS: (pageId) => `${API_BASE_URL}/api/pages/${pageId}/posts`,
+  },
   TEST: {
     ALL: `${API_BASE_URL}/api/test/all`,
     USER: `${API_BASE_URL}/api/test/user`,

@@ -10,15 +10,44 @@ import { getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
 import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
+import { useAuth } from '../../contexts/AuthContext';
 import LocationInput from '../LocationInput';
 import Button from '../Button';
 
-export default function PostForm({ profileUserId, businessId, onPostCreated, isOwnProfile = false, useActiveProfile = false }) {
-  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+export default function PostForm({ pageId, profileUserId, businessId, onPostCreated, isOwnProfile = false, useActiveProfile = false }) {
+  const { activeProfile, activeUserId, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  const { user: currentUser } = useAuth();
   
-  // Use active profile if useActiveProfile is true, otherwise use provided props
-  const finalProfileUserId = useActiveProfile && isUserProfile ? activeProfile?.id : (profileUserId || null);
-  const finalBusinessId = useActiveProfile && isBusinessProfile ? activeProfile?.id : (businessId || null);
+  let finalProfileUserId = null;
+  let finalBusinessId = null;
+  
+  finalProfileUserId = (useActiveProfile && isOwnProfile && isUserProfile) 
+    ? activeProfile?.id 
+    : (profileUserId || null);
+  finalBusinessId = (useActiveProfile && isOwnProfile && isBusinessProfile) 
+    ? activeProfile?.id 
+    : (businessId || null);
+  
+  let finalPageId = null;
+  
+  if (!isOwnProfile) {
+    finalPageId = pageId || null;
+  } else {
+    if (useActiveProfile && activeProfile?.pageId) {
+      finalPageId = activeProfile.pageId;
+    } else {
+      finalPageId = pageId || null;
+    }
+  }
+  
+  if (!finalPageId && !finalBusinessId && !finalProfileUserId) {
+    if (businessId) {
+      finalBusinessId = businessId;
+    }
+    if (profileUserId) {
+      finalProfileUserId = profileUserId;
+    }
+  }
   const [content, setContent] = useState('');
   const [images, setImages] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -136,25 +165,39 @@ export default function PostForm({ profileUserId, businessId, onPostCreated, isO
     setPosting(true);
     try {
       const token = getToken();
+      
+      let finalAuthorAccountId = activeUserId;
+      if (!finalAuthorAccountId) {
+        if (activeProfile?.accountId) {
+          finalAuthorAccountId = activeProfile.accountId;
+        } else if (currentUser?.accountId) {
+          finalAuthorAccountId = currentUser.accountId;
+        }
+      }
+      
+      const postData = {
+        ...(finalPageId ? { pageId: finalPageId } : {}),
+        ...(finalAuthorAccountId ? { authorAccountId: finalAuthorAccountId } : {}),
+        ...(finalBusinessId ? { businessId: finalBusinessId } : { profileUserId: finalProfileUserId }),
+        content: content.trim() || '',
+        images,
+        videos,
+        replySettings,
+        poll: showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2 ? {
+          options: pollOptions.filter(opt => opt.trim()),
+          duration: pollDuration
+        } : null,
+        location: location || null,
+        taggedUsers: taggedUsers || [],
+      };
+      
       const response = await fetch(API_ENDPOINTS.POSTS.CREATE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': token,
         },
-        body: JSON.stringify({
-          ...(finalBusinessId ? { businessId: finalBusinessId } : { profileUserId: finalProfileUserId }),
-          content: content.trim() || '', // Send empty string if no content
-          images,
-          videos,
-          replySettings,
-          poll: showPollModal && pollOptions.filter(opt => opt.trim()).length >= 2 ? {
-            options: pollOptions.filter(opt => opt.trim()),
-            duration: pollDuration
-          } : null,
-          location: location || null,
-          taggedUsers: taggedUsers || [],
-        }),
+        body: JSON.stringify(postData),
       });
 
       if (!response.ok) {

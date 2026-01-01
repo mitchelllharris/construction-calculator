@@ -69,13 +69,9 @@ export default function CreateBusiness() {
         ...formData,
         googleBusinessProfileUrl: formData.googleBusinessProfileUrl || ''
       };
-      console.log('DEBUG: Submitting business data:', submitData);
-      console.log('DEBUG: googleBusinessProfileUrl in submit:', submitData.googleBusinessProfileUrl);
       const response = await post(API_ENDPOINTS.BUSINESSES.CREATE, submitData);
-      console.log('DEBUG: Business created response:', response);
-      console.log('DEBUG: googleBusinessProfileUrl in response:', response?.business?.googleBusinessProfileUrl);
       
-      // Refresh businesses list and switch to the new business
+      await refreshBusinesses();
       await refreshBusinesses();
       if (response.business) {
         switchToBusiness(response.business);

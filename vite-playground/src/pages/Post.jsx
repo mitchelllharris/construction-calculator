@@ -58,15 +58,79 @@ export default function Post() {
     }
   };
 
-  const getAuthorName = (author) => {
-    if (!author) return 'Unknown';
-    if (author.firstName && author.lastName) {
+  const getAuthorName = (author, post) => {
+    // New format: Use authorAccount if available
+    if (post?.authorAccount) {
+      return post.authorAccount.name || 'Unknown';
+    }
+    
+    // Legacy format: Check postedAsBusinessId first
+    if (post?.postedAsBusinessId) {
+      const business = post.postedAsBusinessId;
+      if (business.businessName) {
+        return business.businessName;
+      }
+    }
+    
+    // Fallback: If post has a businessId and author owns that business, show business name
+    if (post?.businessId) {
+      const business = post.businessId;
+      const authorIdStr = author?._id?.toString() || author?.id?.toString() || author?.toString();
+      const ownerIdStr = business.ownerId?._id?.toString() || business.ownerId?.id?.toString() || business.ownerId?.toString();
+      
+      if (ownerIdStr === authorIdStr && business.businessName) {
+        return business.businessName;
+      }
+    }
+    
+    // Default to user name
+    if (author?.firstName && author?.lastName) {
       return `${author.firstName} ${author.lastName}`;
     }
-    return author.username || 'Unknown';
+    return author?.username || 'Unknown';
   };
 
-  const getAuthorAvatar = (author) => {
+  const getAuthorAvatar = (author, post) => {
+    // New format: Use authorAccount if available (even if avatar is null, don't fall back)
+    if (post?.authorAccount) {
+      // If authorAccount exists, use its avatar (even if null) - don't fall back to legacy
+      if (post.authorAccount.avatar) {
+        const avatarUrl = post.authorAccount.avatar.startsWith('http') 
+          ? post.authorAccount.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${post.authorAccount.avatar}`;
+        return avatarUrl;
+      }
+      // If authorAccount exists but avatar is null, return null (don't fall back)
+      return null;
+    }
+    
+    // Legacy format: Only use if authorAccount doesn't exist
+    // Check postedAsBusinessId first
+    if (post?.postedAsBusinessId) {
+      const business = post.postedAsBusinessId;
+      if (business.avatar) {
+        const avatarUrl = business.avatar.startsWith('http') 
+          ? business.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${business.avatar}`;
+        return avatarUrl;
+      }
+    }
+    
+    // Fallback: If post has a businessId and author owns that business, show business avatar
+    if (post?.businessId) {
+      const business = post.businessId;
+      const authorIdStr = author?._id?.toString() || author?.id?.toString() || author?.toString();
+      const ownerIdStr = business.ownerId?._id?.toString() || business.ownerId?.id?.toString() || business.ownerId?.toString();
+      
+      if (ownerIdStr === authorIdStr && business.avatar) {
+        const avatarUrl = business.avatar.startsWith('http') 
+          ? business.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${business.avatar}`;
+        return avatarUrl;
+      }
+    }
+    
+    // Default to user avatar (only if no authorAccount)
     if (author?.avatar) {
       const avatarUrl = author.avatar.startsWith('http') 
         ? author.avatar 

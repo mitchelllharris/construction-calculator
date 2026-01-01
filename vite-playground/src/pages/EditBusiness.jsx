@@ -94,10 +94,7 @@ export default function EditBusiness() {
         ...formData,
         googleBusinessProfileUrl: formData.googleBusinessProfileUrl || ''
       };
-      console.log('DEBUG: Updating business data:', submitData);
-      console.log('DEBUG: googleBusinessProfileUrl in update:', submitData.googleBusinessProfileUrl);
       const response = await put(API_ENDPOINTS.BUSINESSES.UPDATE(businessId), submitData);
-      console.log('DEBUG: Business updated response:', response);
       showSuccess('Business updated successfully!');
       // Navigate back to the business page
       navigate(`/business/${business.businessSlug || businessId}`);

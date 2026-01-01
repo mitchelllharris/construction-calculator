@@ -12,7 +12,7 @@ module.exports = function(app) {
         controller.createPost
     );
 
-    // Get posts for a profile
+    // Get posts for a profile (legacy - supports both pageId and profileUserId)
     app.get(
         "/api/profile/:id/posts",
         [authJwt.verifyTokenOptional],

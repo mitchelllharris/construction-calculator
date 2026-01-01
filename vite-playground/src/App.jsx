@@ -156,7 +156,7 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <ProfileSwitcherProvider>
-              <AppContent />
+            <AppContent />
             </ProfileSwitcherProvider>
           </AuthProvider>
         </ToastProvider>

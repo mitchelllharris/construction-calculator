@@ -150,6 +150,19 @@ exports.signin = async (req, res) => {
         // Convert roles into ["ROLE_ADMIN", "ROLE_USER"]
         const authorities = user.roles.map(role => "ROLE_" + role.name.toUpperCase());
 
+        // Get pageId for this user (if available)
+        let pageId = user.pageId || null;
+        if (!pageId && user.accountId) {
+            const Page = db.page;
+            const page = await Page.findOne({ 
+                accountId: String(user.accountId), 
+                pageType: { $in: ['user', 'profile'] } 
+            });
+            if (page) {
+                pageId = page.pageId;
+            }
+        }
+
         // Successful response
         return res.status(200).send({
             id: user._id,
@@ -157,6 +170,8 @@ exports.signin = async (req, res) => {
             email: user.email,
             emailVerified: user.emailVerified || false,
             roles: authorities,
+            accountId: user.accountId || null, // Add accountId
+            pageId: pageId, // Add pageId
             accessToken: token
         });
 

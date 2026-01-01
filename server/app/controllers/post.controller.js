@@ -2,6 +2,7 @@ const db = require('../models');
 const Post = db.post;
 const User = db.user;
 const Business = db.business;
+const Page = db.page;
 const logger = require('../utils/logger');
 
 // Helper function to build comment tree from flat posts
@@ -26,105 +27,214 @@ async function buildCommentTree(posts, parentId = null) {
 // Helper function to format post for frontend (maintains compatibility)
 function formatPostWithComments(post, comments) {
     const postObj = post.toObject ? post.toObject() : post;
-    const formatComment = (comment) => ({
-        _id: comment._id,
-        userId: comment.authorUserId,
-        authorUserId: comment.authorUserId,
-        content: comment.content,
-        commentedAt: comment.createdAt,
-        createdAt: comment.createdAt,
-        likes: comment.likes || [],
-        reactions: comment.likes || [],
-        replies: (comment.replies || []).map(formatComment)
-    });
+    // Ensure authorAccount is preserved (it might be a virtual property)
+    if (post.authorAccount) {
+        postObj.authorAccount = post.authorAccount;
+    }
+    const formatComment = (comment) => {
+        const commentObj = comment.toObject ? comment.toObject() : comment;
+        // Preserve authorAccount for comments too
+        if (comment.authorAccount) {
+            commentObj.authorAccount = comment.authorAccount;
+        }
+        return {
+            _id: commentObj._id,
+            userId: commentObj.authorUserId,
+            authorUserId: commentObj.authorUserId,
+            authorAccount: commentObj.authorAccount, // Include authorAccount
+            content: commentObj.content,
+            commentedAt: commentObj.createdAt,
+            createdAt: commentObj.createdAt,
+            likes: commentObj.likes || [],
+            reactions: commentObj.likes || [],
+            replies: (commentObj.replies || []).map(formatComment)
+        };
+    };
     postObj.comments = comments.map(formatComment);
     return postObj;
+}
+
+// Helper function to populate authorAccount from authorAccountId
+async function populateAuthorAccount(post) {
+    if (!post) return post;
+    
+    // If already populated, return early
+    if (post.authorAccount && post.authorAccount.accountId) {
+        return post;
+    }
+    
+    if (post.authorAccountId) {
+        const userAccount = await User.findOne({ accountId: post.authorAccountId });
+        if (userAccount) {
+            post.authorAccount = {
+                accountId: userAccount.accountId,
+                type: 'user',
+                name: userAccount.firstName && userAccount.lastName 
+                    ? `${userAccount.firstName} ${userAccount.lastName}` 
+                    : userAccount.username,
+                avatar: userAccount.avatar || null,
+                username: userAccount.username
+            };
+            return post;
+        }
+        
+        const businessAccount = await Business.findOne({ accountId: post.authorAccountId });
+        if (businessAccount) {
+            post.authorAccount = {
+                accountId: businessAccount.accountId,
+                type: 'business',
+                name: businessAccount.businessName,
+                avatar: businessAccount.avatar || null,
+                slug: businessAccount.businessSlug
+            };
+            return post;
+        }
+        
+        logger.warn(`Author account not found for accountId: ${post.authorAccountId} (postId: ${post._id}, pageId: ${post.pageId})`);
+    }
+    return post;
 }
 
 // Export helper functions for use in other controllers
 exports.buildCommentTree = buildCommentTree;
 exports.formatPostWithComments = formatPostWithComments;
+exports.populateAuthorAccount = populateAuthorAccount;
 
 // Create a new post
 exports.createPost = async (req, res) => {
     try {
-        const { profileUserId, businessId, content, images, videos, replySettings, poll, location, taggedUsers, parentPostId, parentCommentId } = req.body;
+        const { pageId, authorAccountId, profileUserId, businessId, content, images, videos, replySettings, poll, location, taggedUsers, parentPostId, parentCommentId, postedAsBusinessId } = req.body;
         const authorUserId = req.userId;
 
-        // Validate required fields - either profileUserId or businessId must be provided
-        if (!profileUserId && !businessId) {
-            return res.status(400).send({ message: "Profile user ID or Business ID is required" });
+        let finalPageId = pageId || null;
+        let finalAuthorAccountId = authorAccountId || null;
+        let finalProfileUserId = profileUserId || null;
+        let finalBusinessId = businessId || null;
+
+        if (finalPageId && finalAuthorAccountId) {
+            const Page = db.page;
+            let page = null;
+            const originalPageId = finalPageId;
+            page = await Page.findOne({ pageId: finalPageId });
+            if (!page && mongoose.Types.ObjectId.isValid(finalPageId)) {
+                page = await Page.findById(finalPageId);
+                if (page && page.pageId) {
+                    finalPageId = page.pageId;
+                } else if (page) {
+                    finalPageId = originalPageId;
+                }
+            }
+            if (!page) {
+                return res.status(404).send({ message: "Page not found" });
+            }
+        } else if (!finalProfileUserId && !finalBusinessId) {
+            return res.status(400).send({ message: "Either pageId/authorAccountId (new format) or profileUserId/businessId (legacy format) is required" });
         }
+        
         if (profileUserId && businessId) {
             return res.status(400).send({ message: "Cannot specify both profileUserId and businessId" });
         }
 
-        // If this is a comment/reply, content is required
         if (parentPostId || parentCommentId) {
             if (!content || !content.trim()) {
                 return res.status(400).send({ message: "Comment/Reply content is required" });
             }
         } else {
-            // For top-level posts, at least one of content, images, videos, or poll must be provided
-        const hasContent = content && content.trim();
-        const hasImages = images && Array.isArray(images) && images.length > 0;
-        const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
-        const hasPoll = poll && poll.options && Array.isArray(poll.options) && poll.options.length >= 2;
+            const hasContent = content && content.trim();
+            const hasImages = images && Array.isArray(images) && images.length > 0;
+            const hasVideos = videos && Array.isArray(videos) && videos.length > 0;
+            const hasPoll = poll && poll.options && Array.isArray(poll.options) && poll.options.length >= 2;
 
-        if (!hasContent && !hasImages && !hasVideos && !hasPoll) {
-            return res.status(400).send({ message: "Post must contain at least text, images, videos, or a poll" });
+            if (!hasContent && !hasImages && !hasVideos && !hasPoll) {
+                return res.status(400).send({ message: "Post must contain at least text, images, videos, or a poll" });
             }
         }
 
-        // Check if profile user or business exists
-        let finalProfileUserId = profileUserId || null;
-        let finalBusinessId = businessId || null;
-
-        if (profileUserId) {
-            const profileUser = await User.findById(profileUserId);
+        if (!finalPageId && finalProfileUserId) {
+            const profileUser = await User.findById(finalProfileUserId);
             if (!profileUser) {
                 return res.status(404).send({ message: "Profile user not found" });
             }
-        } else if (businessId) {
-            const business = await Business.findById(businessId);
+            if (profileUser.pageId) {
+                finalPageId = profileUser.pageId;
+            } else {
+                const userPage = await Page.findOne({ accountId: String(profileUser.accountId || profileUser._id), pageType: { $in: ['user', 'profile'] } });
+                if (userPage) {
+                    finalPageId = userPage.pageId || userPage._id.toString();
+                }
+            }
+        } else if (!finalPageId && finalBusinessId) {
+            const business = await Business.findById(finalBusinessId);
             if (!business) {
                 return res.status(404).send({ message: "Business not found" });
             }
-            // Check if business is active
             if (!business.isActive) {
-                // Only owner can post on inactive businesses
                 if (business.ownerId.toString() !== authorUserId) {
                     return res.status(403).send({ message: "You don't have permission to post on this business" });
                 }
             }
+            if (business.pageId) {
+                finalPageId = business.pageId;
+            } else {
+                const businessPage = await Page.findOne({ accountId: String(business.accountId || business._id), pageType: 'business' });
+                if (businessPage) {
+                    finalPageId = businessPage.pageId || businessPage._id.toString();
+                }
+            }
         }
 
-        // For comments/replies, inherit profileUserId/businessId from parent post
         if (parentPostId) {
             const parentPost = await Post.findById(parentPostId);
             if (!parentPost) {
                 return res.status(404).send({ message: "Parent post not found" });
             }
-            finalProfileUserId = parentPost.profileUserId || null;
-            finalBusinessId = parentPost.businessId || null;
+            finalPageId = parentPost.pageId || finalPageId;
+            finalAuthorAccountId = parentPost.authorAccountId || finalAuthorAccountId;
+            finalProfileUserId = parentPost.profileUserId || finalProfileUserId;
+            finalBusinessId = parentPost.businessId || finalBusinessId;
         } else if (parentCommentId) {
             const parentComment = await Post.findById(parentCommentId);
             if (!parentComment) {
                 return res.status(404).send({ message: "Parent comment not found" });
             }
-            // Find root post
             let rootPost = parentComment;
             while (rootPost.parentPostId || rootPost.parentCommentId) {
                 rootPost = await Post.findById(rootPost.parentPostId || rootPost.parentCommentId);
                 if (!rootPost) break;
             }
             if (rootPost) {
-                finalProfileUserId = rootPost.profileUserId || null;
-                finalBusinessId = rootPost.businessId || null;
+                finalPageId = rootPost.pageId || finalPageId;
+                finalAuthorAccountId = rootPost.authorAccountId || finalAuthorAccountId;
+                finalProfileUserId = rootPost.profileUserId || finalProfileUserId;
+                finalBusinessId = rootPost.businessId || finalBusinessId;
             }
         }
 
-        // Check privacy settings for posting (only for user profiles)
+        // If authorAccountId not provided, try to get it from the logged-in user
+        // This handles the case where frontend doesn't send authorAccountId
+        // IMPORTANT: The frontend should send authorAccountId (activeUserId) which is the accountId of the active profile
+        // But if it's not sent, we fall back to the logged-in user's accountId
+        if (!finalAuthorAccountId && authorUserId) {
+            const authorUser = await User.findById(authorUserId);
+            if (authorUser && authorUser.accountId) {
+                finalAuthorAccountId = authorUser.accountId;
+            } else {
+                logger.error(`User ${authorUserId} does not have accountId set. Migration may not have run.`);
+                return res.status(400).send({ 
+                    message: "User accountId not found. Please contact support or run migration script." 
+                });
+            }
+        }
+        
+        // Final validation - authorAccountId is required
+        if (!finalAuthorAccountId) {
+            logger.error(`Cannot create post: authorAccountId is null. authorUserId: ${authorUserId}, pageId: ${finalPageId}, businessId: ${finalBusinessId}`);
+            return res.status(400).send({ 
+                message: "Author account ID is required. Please ensure you are logged in and your account is properly configured." 
+            });
+        }
+
+        // Check privacy settings for posting (only for user profiles - legacy support)
         if (finalProfileUserId) {
             const profileUser = await User.findById(finalProfileUserId);
             const canPost = checkPostPrivacy(profileUser, authorUserId, finalProfileUserId);
@@ -133,11 +243,36 @@ exports.createPost = async (req, res) => {
             }
         }
 
-        // Create post
+        // Legacy: Validate postedAsBusinessId if provided (must be owned by author)
+        let finalPostedAsBusinessId = postedAsBusinessId || null;
+        if (postedAsBusinessId) {
+            const business = await Business.findById(postedAsBusinessId);
+            if (!business) {
+                return res.status(404).send({ message: "Business for postedAsBusinessId not found" });
+            }
+            if (business.ownerId.toString() !== authorUserId) {
+                return res.status(403).send({ message: "You don't own the business specified in postedAsBusinessId" });
+            }
+            finalPostedAsBusinessId = postedAsBusinessId;
+            // If posting as business, use business accountId as authorAccountId
+            if (business.accountId && !finalAuthorAccountId) {
+                finalAuthorAccountId = business.accountId;
+            }
+        }
+
+        if (!finalPageId) {
+            return res.status(400).send({ 
+                message: "Target page ID is required. Please ensure you are posting to a valid profile." 
+            });
+        }
+
         const postData = {
+            pageId: finalPageId,
+            authorAccountId: finalAuthorAccountId,
             profileUserId: finalProfileUserId,
             businessId: finalBusinessId,
             authorUserId,
+            postedAsBusinessId: finalPostedAsBusinessId,
             content: content ? content.trim() : '',
             images: images || [],
             videos: videos || [],
@@ -145,7 +280,6 @@ exports.createPost = async (req, res) => {
             parentCommentId: parentCommentId || null
         };
 
-        // Only top-level posts can have replySettings, poll, location, taggedUsers
         if (!parentPostId && !parentCommentId) {
             postData.replySettings = replySettings || 'everyone';
             
@@ -172,15 +306,37 @@ exports.createPost = async (req, res) => {
         const post = new Post(postData);
         await post.save();
 
-        // Populate author and profile info
         await post.populate('authorUserId', 'firstName lastName username avatar');
         await post.populate('profileUserId', 'firstName lastName username avatar');
+        await post.populate({
+            path: 'businessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        });
+        await post.populate({
+            path: 'postedAsBusinessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        });
         await post.populate('parentPostId', 'authorUserId profileUserId');
         await post.populate('parentCommentId', 'authorUserId profileUserId');
 
+        await populateAuthorAccount(post);
+
+        const postResponse = post.toObject ? post.toObject() : post;
+        if (post.authorAccount) {
+            postResponse.authorAccount = post.authorAccount;
+        }
+
         return res.status(201).send({
             message: "Post created successfully",
-            post
+            post: postResponse
         });
     } catch (error) {
         logger.error("Create post error:", error);
@@ -222,7 +378,7 @@ exports.getProfilePosts = async (req, res) => {
                     ]
                 },
                 {
-                    $or: [
+            $or: [
                         { parentCommentId: null },
                         { parentCommentId: { $exists: false } }
                     ]
@@ -232,6 +388,22 @@ exports.getProfilePosts = async (req, res) => {
         })
         .populate('authorUserId', 'firstName lastName username avatar')
         .populate('profileUserId', 'firstName lastName username avatar')
+        .populate({
+            path: 'businessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        })
+        .populate({
+            path: 'postedAsBusinessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        })
         .populate('likes.userId', 'firstName lastName username')
         .sort({ createdAt: -1 })
         .limit(50);
@@ -254,6 +426,14 @@ exports.getProfilePosts = async (req, res) => {
                 _id: { $nin: Array.from(fetchedIds) }
             })
             .populate('authorUserId', 'firstName lastName username avatar')
+            .populate({
+                path: 'postedAsBusinessId',
+                select: 'businessName businessSlug avatar ownerId',
+                populate: {
+                    path: 'ownerId',
+                    select: '_id'
+                }
+            })
             .populate('likes.userId', 'firstName lastName username')
             .sort({ createdAt: 1 });
             
@@ -265,7 +445,17 @@ exports.getProfilePosts = async (req, res) => {
 
         // Build comment trees for each post
         const postsWithComments = await Promise.all(posts.map(async (post) => {
+            await populateAuthorAccount(post);
             const comments = await buildCommentTree(allComments, post._id);
+            // Populate authorAccount for comments too
+            for (const comment of comments) {
+                await populateAuthorAccount(comment);
+                if (comment.replies) {
+                    for (const reply of comment.replies) {
+                        await populateAuthorAccount(reply);
+                    }
+                }
+            }
             return formatPostWithComments(post, comments);
         }));
 
@@ -306,6 +496,14 @@ exports.getPostWithThread = async (req, res) => {
                 _id: { $nin: allComments.map(c => c._id) }
             })
             .populate('authorUserId', 'firstName lastName username avatar')
+            .populate({
+                path: 'postedAsBusinessId',
+                select: 'businessName businessSlug avatar ownerId',
+                populate: {
+                    path: 'ownerId',
+                    select: '_id'
+                }
+            })
             .populate('likes.userId', 'firstName lastName username')
             .sort({ createdAt: 1 });
             
@@ -320,7 +518,27 @@ exports.getPostWithThread = async (req, res) => {
         // Populate post
         await post.populate('authorUserId', 'firstName lastName username avatar');
         await post.populate('profileUserId', 'firstName lastName username avatar');
+        await post.populate({
+            path: 'postedAsBusinessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        });
         await post.populate('likes.userId', 'firstName lastName username');
+
+        // Populate authorAccount
+        await populateAuthorAccount(post);
+        // Populate authorAccount for comments
+        for (const comment of comments) {
+            await populateAuthorAccount(comment);
+            if (comment.replies) {
+                for (const reply of comment.replies) {
+                    await populateAuthorAccount(reply);
+                }
+            }
+        }
 
         const postObj = formatPostWithComments(post, comments);
 
@@ -595,7 +813,7 @@ exports.uploadPostMedia = async (req, res) => {
 exports.addComment = async (req, res) => {
     try {
         const { postId } = req.params;
-        const { content } = req.body;
+        const { content, authorAccountId } = req.body;
         const userId = req.userId;
 
         if (!userId) {
@@ -620,9 +838,21 @@ exports.addComment = async (req, res) => {
             }
         }
 
-        // Create comment as a new Post
+        // Get authorAccountId from request body (active profile) or fall back to logged-in user
+        let commentAuthorAccountId = authorAccountId || null;
+        if (!commentAuthorAccountId) {
+            const authorUser = await User.findById(userId);
+            if (authorUser && authorUser.accountId) {
+                commentAuthorAccountId = authorUser.accountId;
+            }
+        }
+
+        // Create comment as a new Post - inherit pageId and authorAccountId from parent
         const comment = new Post({
+            pageId: post.pageId || null,
+            authorAccountId: commentAuthorAccountId,
             profileUserId: post.profileUserId,
+            businessId: post.businessId,
             authorUserId: userId,
             content: content.trim(),
             parentPostId: postId,
@@ -677,6 +907,17 @@ exports.addComment = async (req, res) => {
         await post.populate('profileUserId', 'firstName lastName username avatar');
         await post.populate('likes.userId', 'firstName lastName username');
 
+        // Populate authorAccount for post and comments
+        await populateAuthorAccount(post);
+        for (const comment of comments) {
+            await populateAuthorAccount(comment);
+            if (comment.replies) {
+                for (const reply of comment.replies) {
+                    await populateAuthorAccount(reply);
+                }
+            }
+        }
+
         const postObj = formatPostWithComments(post, comments);
 
         return res.status(200).send({
@@ -695,7 +936,7 @@ exports.addComment = async (req, res) => {
 exports.addReply = async (req, res) => {
     try {
         const { postId, commentId } = req.params;
-        const { content } = req.body;
+        const { content, authorAccountId } = req.body;
         const userId = req.userId;
 
         if (!userId) {
@@ -727,9 +968,21 @@ exports.addReply = async (req, res) => {
                 return res.status(403).send({ message: "You don't have permission to reply to this comment" });
             }
 
-        // Create reply as a new Post
+        // Get authorAccountId from request body (active profile) or fall back to logged-in user
+        let replyAuthorAccountId = authorAccountId || null;
+        if (!replyAuthorAccountId) {
+            const authorUser = await User.findById(userId);
+            if (authorUser && authorUser.accountId) {
+                replyAuthorAccountId = authorUser.accountId;
+            }
+        }
+
+        // Create reply as a new Post - inherit pageId and authorAccountId from parent post
         const reply = new Post({
+            pageId: parentPost.pageId || null,
+            authorAccountId: replyAuthorAccountId,
             profileUserId: parentPost.profileUserId,
+            businessId: parentPost.businessId,
             authorUserId: userId,
             content: content.trim(),
             parentCommentId: commentId,
@@ -783,6 +1036,17 @@ exports.addReply = async (req, res) => {
         await parentPost.populate('authorUserId', 'firstName lastName username avatar');
         await parentPost.populate('profileUserId', 'firstName lastName username avatar');
         await parentPost.populate('likes.userId', 'firstName lastName username');
+
+        // Populate authorAccount for post and comments
+        await populateAuthorAccount(parentPost);
+        for (const comment of comments) {
+            await populateAuthorAccount(comment);
+            if (comment.replies) {
+                for (const reply of comment.replies) {
+                    await populateAuthorAccount(reply);
+                }
+            }
+        }
 
         const postObj = formatPostWithComments(parentPost, comments);
 

@@ -1,7 +1,9 @@
 const db = require("../models");
 const Business = db.business;
 const User = db.user;
+const Page = db.page;
 const logger = require("../utils/logger");
+const { generateAccountId, generatePageId } = require("../utils/accountId");
 
 // Generate a unique slug from business name
 const generateSlug = async (businessName) => {
@@ -130,6 +132,12 @@ exports.createBusiness = async (req, res) => {
         // Generate unique slug
         const businessSlug = await generateSlug(businessName);
 
+        // Generate accountId for the business
+        const accountId = await generateAccountId(db);
+
+        // Generate pageId
+        const pageId = generatePageId(accountId);
+
         // DEBUG: Log the googleBusinessProfileUrl before saving
         console.log('DEBUG: Creating business with googleBusinessProfileUrl:', googleBusinessProfileUrl);
         console.log('DEBUG: Type of googleBusinessProfileUrl:', typeof googleBusinessProfileUrl);
@@ -138,6 +146,8 @@ exports.createBusiness = async (req, res) => {
         // Create business
         const businessData = {
             ownerId: userId,
+            accountId,
+            pageId,
             businessName: businessName.trim(),
             businessSlug,
             description: description ? description.trim() : '',
@@ -170,6 +180,18 @@ exports.createBusiness = async (req, res) => {
         console.log('DEBUG: googleBusinessProfileUrl in business object before save:', business.googleBusinessProfileUrl);
 
         await business.save();
+        
+        // Create page for this business
+        const page = new Page({
+            pageId,
+            accountId: String(accountId),
+            pageType: 'business',
+            accountRef: business._id,
+            accountModel: 'Business',
+            activity: [],
+            settings: {}
+        });
+        await page.save();
         
         // DEBUG: Log the saved business
         console.log('DEBUG: Business saved with googleBusinessProfileUrl:', business.googleBusinessProfileUrl);
@@ -427,13 +449,19 @@ exports.getBusinessPosts = async (req, res) => {
         // Import Post model
         const Post = db.post;
 
+        // Get pageId for this business (new format) or use businessId (legacy)
+        const pageId = business.pageId || null;
+
+        // Build query - support both new (pageId) and legacy (businessId) formats
+        const pageQuery = pageId ? { pageId: pageId } : {};
+        const legacyQuery = { businessId: businessId };
+        const targetQuery = pageId ? pageQuery : legacyQuery;
+
         // Get top-level posts (no parentPostId or parentCommentId)
-        // Only show posts that were posted ON this business, not posts created BY the owner
+        // Only show posts that were posted ON this business page
         const posts = await Post.find({
             $and: [
-                {
-                    businessId: businessId
-                },
+                targetQuery,
                 {
                     $or: [
                         { parentPostId: null },
@@ -450,7 +478,22 @@ exports.getBusinessPosts = async (req, res) => {
             ]
         })
         .populate('authorUserId', 'firstName lastName username avatar')
-        .populate('businessId', 'businessName businessSlug avatar')
+        .populate({
+            path: 'businessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        })
+        .populate({
+            path: 'postedAsBusinessId',
+            select: 'businessName businessSlug avatar ownerId',
+            populate: {
+                path: 'ownerId',
+                select: '_id'
+            }
+        })
         .populate('likes.userId', 'firstName lastName username')
         .sort({ createdAt: -1 })
         .limit(50);
@@ -473,7 +516,14 @@ exports.getBusinessPosts = async (req, res) => {
                 _id: { $nin: Array.from(fetchedIds) }
             })
             .populate('authorUserId', 'firstName lastName username avatar')
-            .populate('businessId', 'businessName businessSlug avatar')
+            .populate({
+                path: 'postedAsBusinessId',
+                select: 'businessName businessSlug avatar ownerId',
+                populate: {
+                    path: 'ownerId',
+                    select: '_id'
+                }
+            })
             .populate('likes.userId', 'firstName lastName username');
             
             comments.forEach(c => fetchedIds.add(c._id));
@@ -486,9 +536,20 @@ exports.getBusinessPosts = async (req, res) => {
         const postController = require('./post.controller');
         const buildCommentTree = postController.buildCommentTree;
         const formatPostWithComments = postController.formatPostWithComments;
+        const populateAuthorAccount = postController.populateAuthorAccount;
 
         const postsWithComments = await Promise.all(posts.map(async (post) => {
+            await populateAuthorAccount(post);
             const comments = await buildCommentTree(allComments, post._id.toString());
+            // Populate authorAccount for comments too
+            for (const comment of comments) {
+                await populateAuthorAccount(comment);
+                if (comment.replies) {
+                    for (const reply of comment.replies) {
+                        await populateAuthorAccount(reply);
+                    }
+                }
+            }
             return formatPostWithComments(post, comments);
         }));
 
