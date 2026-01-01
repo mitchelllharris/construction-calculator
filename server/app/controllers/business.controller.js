@@ -287,9 +287,40 @@ exports.updateBusiness = async (req, res) => {
             return res.status(404).send({ message: "Business not found" });
         }
 
-        // Check ownership
-        if (business.ownerId.toString() !== userId) {
-            return res.status(403).send({ message: "You don't have permission to update this business" });
+        // Get active account context
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+
+        // Get user's accountId if activeAccountId not provided
+        let finalActiveAccountId = activeAccountId;
+        if (!finalActiveAccountId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.accountId) {
+                finalActiveAccountId = user.accountId;
+            }
+        }
+
+        // Get user's pageId if activePageId not provided
+        let finalActivePageId = activePageId;
+        if (!finalActivePageId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.pageId) {
+                finalActivePageId = user.pageId;
+            }
+        }
+
+        // Check permissions
+        const permissionCheck = await canEditProfile(
+            business,
+            'business',
+            userId,
+            finalActiveAccountId,
+            finalActivePageId
+        );
+
+        if (!permissionCheck.allowed) {
+            return res.status(403).send({
+                message: permissionCheck.reason || "You don't have permission to update this business"
+            });
         }
 
         // Check for duplicate phone, email, website, or ABN across all businesses (excluding current business)
@@ -406,9 +437,34 @@ exports.deleteBusiness = async (req, res) => {
             return res.status(404).send({ message: "Business not found" });
         }
 
-        // Check ownership
-        if (business.ownerId.toString() !== userId) {
-            return res.status(403).send({ message: "You don't have permission to delete this business" });
+        // Get active account context
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+
+        // Get user's accountId if activeAccountId not provided
+        let finalActiveAccountId = activeAccountId;
+        if (!finalActiveAccountId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.accountId) {
+                finalActiveAccountId = user.accountId;
+            }
+        }
+
+        // Get user's pageId if activePageId not provided
+        let finalActivePageId = activePageId;
+        if (!finalActivePageId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.pageId) {
+                finalActivePageId = user.pageId;
+            }
+        }
+
+        // Check permissions
+        const permissionCheck = await canDeleteBusiness(business, userId, finalActiveAccountId, finalActivePageId);
+
+        if (!permissionCheck.allowed) {
+            return res.status(403).send({
+                message: permissionCheck.reason || "You don't have permission to delete this business"
+            });
         }
 
         // Delete business from database (hard delete)

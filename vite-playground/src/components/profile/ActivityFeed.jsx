@@ -5,6 +5,8 @@ import { get, getToken } from '../../utils/api';
 import { API_ENDPOINTS } from '../../config/api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProfileSwitcher } from '../../contexts/ProfileSwitcherContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import ReactionPicker from './ReactionPicker';
 import MediaGallery from './MediaGallery';
 import CommentSection from './CommentSection';
@@ -21,6 +23,8 @@ export default function ActivityFeed({ pageId, profileId, businessId, isOwnProfi
   const [currentView, setCurrentView] = useState(null); // { type: 'post' | 'comment', postId, commentId?, post: {...} }
   const { user: currentUser } = useAuth();
   const { showError, showSuccess } = useToast();
+  const { activeProfile, activeUserId } = useProfileSwitcher();
+  const { canDeletePost } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -61,6 +65,16 @@ export default function ActivityFeed({ pageId, profileId, businessId, isOwnProfi
   };
 
   const handleDeletePost = async (postId) => {
+    const post = posts.find(p => (p._id?.toString() || p.id?.toString()) === postId.toString());
+    
+    if (post) {
+      const permission = canDeletePost(post);
+      if (!permission.allowed) {
+        showError(permission.reason || 'You do not have permission to delete this post');
+        return;
+      }
+    }
+
     if (!window.confirm('Are you sure you want to delete this post?')) {
       return;
     }
@@ -72,11 +86,21 @@ export default function ActivityFeed({ pageId, profileId, businessId, isOwnProfi
         return;
       }
 
+      const headers = {
+        'x-access-token': token,
+      };
+
+      // Send active account context
+      if (activeUserId) {
+        headers['x-active-account-id'] = activeUserId.toString();
+      }
+      if (activeProfile?.pageId) {
+        headers['x-active-page-id'] = activeProfile.pageId;
+      }
+
       const response = await fetch(API_ENDPOINTS.POSTS.DELETE(postId), {
         method: 'DELETE',
-        headers: {
-          'x-access-token': token,
-        },
+        headers,
       });
 
       if (!response.ok) {

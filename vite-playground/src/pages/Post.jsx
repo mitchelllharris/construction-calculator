@@ -6,6 +6,7 @@ import { API_ENDPOINTS } from '../config/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
+import { usePermissions } from '../hooks/usePermissions';
 import PostView from '../components/profile/PostView';
 import CommentSection from '../components/profile/CommentSection';
 
@@ -23,6 +24,8 @@ export default function Post() {
   const [currentView, setCurrentView] = useState(null);
   const { user: currentUser } = useAuth();
   const { showError, showSuccess } = useToast();
+  const { activeProfile, activeUserId, isUserProfile, isBusinessProfile } = useProfileSwitcher();
+  const { canDeletePost } = usePermissions();
 
   // Scroll to top when component mounts or postId changes
   useEffect(() => {
@@ -196,6 +199,14 @@ export default function Post() {
   };
 
   const handleDeletePost = async (postIdToDelete) => {
+    if (post) {
+      const permission = canDeletePost(post);
+      if (!permission.allowed) {
+        showError(permission.reason || 'You do not have permission to delete this post');
+        return;
+      }
+    }
+
     if (!window.confirm('Are you sure you want to delete this post?')) {
       return;
     }
@@ -207,11 +218,21 @@ export default function Post() {
         return;
       }
 
+      const headers = {
+        'x-access-token': token,
+      };
+
+      // Send active account context
+      if (activeUserId) {
+        headers['x-active-account-id'] = activeUserId.toString();
+      }
+      if (activeProfile?.pageId) {
+        headers['x-active-page-id'] = activeProfile.pageId;
+      }
+
       const response = await fetch(API_ENDPOINTS.POSTS.DELETE(postIdToDelete), {
         method: 'DELETE',
-        headers: {
-          'x-access-token': token,
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -465,8 +486,6 @@ export default function Post() {
     );
   }
 
-  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
-  
   // Check if post belongs to active profile
   const postBusinessId = post.businessId?._id?.toString() || post.businessId?.toString();
   const postProfileUserId = post.profileUserId?._id?.toString() || post.profileUserId?.toString();

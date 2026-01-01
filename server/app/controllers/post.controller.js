@@ -4,6 +4,7 @@ const User = db.user;
 const Business = db.business;
 const Page = db.page;
 const logger = require('../utils/logger');
+const { canModifyPost, canModifyComment, getActiveAccountContext } = require('../utils/permissions');
 
 // Helper function to build comment tree from flat posts
 async function buildCommentTree(posts, parentId = null) {
@@ -564,23 +565,33 @@ exports.deletePost = async (req, res) => {
             return res.status(404).send({ message: "Post not found" });
         }
 
-        // Always allow the author to delete their own post
-        if (post.authorUserId.toString() === userId) {
-            // Author can delete - proceed
-        } else if (post.businessId) {
-            // Post is on a business profile - check if user owns that business
-            const business = await Business.findById(post.businessId);
-            if (!business || business.ownerId.toString() !== userId) {
-                return res.status(403).send({ message: "You don't have permission to delete this post" });
+        // Get active account context from request
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+
+        // Get user's accountId if activeAccountId not provided
+        let finalActiveAccountId = activeAccountId;
+        if (!finalActiveAccountId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.accountId) {
+                finalActiveAccountId = user.accountId;
             }
-        } else if (post.profileUserId) {
-            // Post is on a user profile - check if user owns that profile
-            if (post.profileUserId.toString() !== userId) {
-                return res.status(403).send({ message: "You don't have permission to delete this post" });
+        }
+
+        // Get user's pageId if activePageId not provided
+        let finalActivePageId = activePageId;
+        if (!finalActivePageId && userId) {
+            const user = await User.findById(userId);
+            if (user && user.pageId) {
+                finalActivePageId = user.pageId;
             }
-        } else {
-            // Post has neither profileUserId nor businessId - only author can delete
-            return res.status(403).send({ message: "You don't have permission to delete this post" });
+        }
+
+        // Check permissions using the permission helper
+        const permissionCheck = await canModifyPost(post, finalActiveAccountId, finalActivePageId);
+        if (!permissionCheck.allowed) {
+            return res.status(403).send({ 
+                message: permissionCheck.reason || "You don't have permission to delete this post" 
+            });
         }
 
         // Delete media files from server

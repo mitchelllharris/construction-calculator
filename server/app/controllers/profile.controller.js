@@ -5,6 +5,7 @@ const ProfileView = db.profileView;
 const bcrypt = require("bcryptjs");
 const { generateToken, sendVerificationEmail } = require("../services/email.service");
 const logger = require("../utils/logger");
+const { canEditProfile, getActiveAccountContext } = require("../utils/permissions");
 
 // Get current user's profile
 exports.getProfile = async (req, res) => {
@@ -85,6 +86,36 @@ exports.updateProfile = async (req, res) => {
 
         if (!user) {
             return res.status(404).send({ message: "User not found" });
+        }
+
+        // Get active account context
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+
+        // Get user's accountId if activeAccountId not provided
+        let finalActiveAccountId = activeAccountId;
+        if (!finalActiveAccountId && user.accountId) {
+            finalActiveAccountId = user.accountId;
+        }
+
+        // Get user's pageId if activePageId not provided
+        let finalActivePageId = activePageId;
+        if (!finalActivePageId && user.pageId) {
+            finalActivePageId = user.pageId;
+        }
+
+        // Check permissions
+        const permissionCheck = await canEditProfile(
+            user,
+            'user',
+            req.userId,
+            finalActiveAccountId,
+            finalActivePageId
+        );
+
+        if (!permissionCheck.allowed) {
+            return res.status(403).send({
+                message: permissionCheck.reason || "You don't have permission to update this profile"
+            });
         }
 
         const { 

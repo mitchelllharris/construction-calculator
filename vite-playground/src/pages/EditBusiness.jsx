@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { get, put, del } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
 import Input from '../components/Input';
@@ -14,6 +16,8 @@ export default function EditBusiness() {
   const { slug, id } = useParams();
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
+  const { activeProfile, activeUserId } = useProfileSwitcher();
+  const { canEditProfile, canDeleteBusiness } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -86,15 +90,35 @@ export default function EditBusiness() {
       return;
     }
 
+    // Check permissions
+    const businessForCheck = { ...business, type: 'business' };
+    const permission = canEditProfile(businessForCheck);
+    if (!permission.allowed) {
+      showError(permission.reason || 'You do not have permission to edit this business');
+      return;
+    }
+
     setSaving(true);
     try {
       const businessId = business._id || business.id;
       // Ensure googleBusinessProfileUrl is included in the request
       const submitData = {
         ...formData,
-        googleBusinessProfileUrl: formData.googleBusinessProfileUrl || ''
+        googleBusinessProfileUrl: formData.googleBusinessProfileUrl || '',
+        authorAccountId: activeUserId,
+        pageId: activeProfile?.pageId,
       };
-      const response = await put(API_ENDPOINTS.BUSINESSES.UPDATE(businessId), submitData);
+      
+      // Add active account context to headers
+      const headers = {};
+      if (activeUserId) {
+        headers['x-active-account-id'] = activeUserId.toString();
+      }
+      if (activeProfile?.pageId) {
+        headers['x-active-page-id'] = activeProfile.pageId;
+      }
+      
+      const response = await put(API_ENDPOINTS.BUSINESSES.UPDATE(businessId), submitData, { headers });
       showSuccess('Business updated successfully!');
       // Navigate back to the business page
       navigate(`/business/${business.businessSlug || businessId}`);
@@ -106,6 +130,13 @@ export default function EditBusiness() {
   };
 
   const handleDelete = async () => {
+    // Check permissions
+    const permission = canDeleteBusiness(business);
+    if (!permission.allowed) {
+      showError(permission.reason || 'You do not have permission to delete this business');
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete this business? This action cannot be undone.')) {
       return;
     }
@@ -113,7 +144,17 @@ export default function EditBusiness() {
     setDeleting(true);
     try {
       const businessId = business._id || business.id;
-      await del(API_ENDPOINTS.BUSINESSES.DELETE(businessId));
+      
+      // Add active account context to headers
+      const headers = {};
+      if (activeUserId) {
+        headers['x-active-account-id'] = activeUserId.toString();
+      }
+      if (activeProfile?.pageId) {
+        headers['x-active-page-id'] = activeProfile.pageId;
+      }
+      
+      await del(API_ENDPOINTS.BUSINESSES.DELETE(businessId), { headers });
       showSuccess('Business deleted successfully');
       // Navigate to user's profile or dashboard
       navigate('/dashboard');
