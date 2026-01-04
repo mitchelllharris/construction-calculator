@@ -15,6 +15,7 @@ export default function Input({
   error,
   success,
   showValidationIcon = true,
+  disabled = false,
   ...restProps
 }) {
   const paddingClass = IconComponent
@@ -23,9 +24,18 @@ export default function Input({
 
   // Determine border color based on validation state
   const getBorderColor = () => {
+    if (disabled) return 'border-gray-300';
     if (error) return 'border-red-500 focus-within:border-red-600';
     if (success) return 'border-green-500 focus-within:border-green-600';
     return 'border-gray-200 focus-within:border-blue-500';
+  };
+
+  // Determine background color
+  const getBackgroundColor = () => {
+    if (disabled) return 'bg-gray-100';
+    if (error) return 'bg-red-50';
+    if (success) return 'bg-green-50';
+    return 'bg-white';
   };
 
   return (
@@ -35,22 +45,23 @@ export default function Input({
           {label}
         </label>
       )}
-      <div className={`items-center flex relative w-full border ${getBorderColor()} px-3 py-2 rounded-sm transition-colors ${error ? 'bg-red-50' : success ? 'bg-green-50' : 'bg-white'}`}>
+      <div className={`items-center flex relative w-full border ${getBorderColor()} px-3 py-2 rounded-sm transition-colors ${getBackgroundColor()} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}>
         {IconComponent && iconPosition === 'left' && (
           <div className='mr-2'>
             <IconComponent 
-              className={error ? "text-red-500" : success ? "text-green-500" : (iconColor || "text-gray-500")} 
+              className={disabled ? "text-gray-400" : error ? "text-red-500" : success ? "text-green-500" : (iconColor || "text-gray-500")} 
               size={iconSize || 18}
             />
           </div>
         )}
 
         <input
-          className={`w-full ${paddingClass} ${className} outline-none bg-transparent`}
+          className={`w-full ${paddingClass} ${className} outline-none bg-transparent ${disabled ? 'cursor-not-allowed text-gray-500' : ''}`}
           type={type}
           placeholder={placeholder}
           value={value ?? ''}
           onChange={onChange}
+          disabled={disabled}
           {...restProps}
         />
 

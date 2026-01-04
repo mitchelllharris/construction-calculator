@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getAllContacts, deleteContact } from '../utils/contactApi';
+import { getAllContacts } from '../utils/contactApi';
 import { useToast } from '../contexts/ToastContext';
 import ContactCard from './ContactCard';
 import SkeletonCard from './SkeletonCard';
 import Input from './Input';
-import { MdSearch, MdFilterList, MdChevronLeft, MdChevronRight, MdRefresh } from 'react-icons/md';
+import { MdSearch, MdFilterList, MdChevronLeft, MdChevronRight, MdRefresh, MdSort } from 'react-icons/md';
 
 export default function ContactList({ onEdit, onView, onRefresh, onSelectedContactsChange }) {
   const { showSuccess, showError } = useToast();
@@ -14,9 +14,10 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
   const [searching, setSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
   const [pageSize, setPageSize] = useState(20);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
-  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const prevRefreshRef = useRef(null);
   const searchTimeoutRef = useRef(null);
   const isInitialLoad = useRef(true);
@@ -37,7 +38,10 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
         limit,
         search: searchTerm || undefined,
         type: typeFilter || undefined,
+        sortBy: sortBy || undefined,
+        sortOrder: sortOrder || undefined,
       };
+      
       const response = await getAllContacts(params);
       setContacts(response.contacts || []);
       setPagination(response.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
@@ -45,12 +49,13 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
       setSelectedContacts(newSet); // Clear selection on new page
       isInitialLoad.current = false;
     } catch (error) {
+      console.error('[ContactList] Error fetching contacts:', error);
       showError(error.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
       setSearching(false);
     }
-  }, [searchTerm, typeFilter, pageSize, pagination.page, showError]);
+  }, [searchTerm, typeFilter, sortBy, sortOrder, pageSize, pagination.page, showError]);
 
   // Update parent when selected contacts change (separate effect to avoid render issues)
   useEffect(() => {
@@ -104,29 +109,9 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchTerm, typeFilter, fetchContacts, pageSize]);
+  }, [searchTerm, typeFilter, sortBy, sortOrder, fetchContacts, pageSize]);
 
 
-  const handleDelete = async (contact) => {
-    if (deleteConfirmId === contact._id) {
-      // Confirm delete
-      try {
-        await deleteContact(contact._id);
-        showSuccess('Contact deleted successfully');
-        setDeleteConfirmId(null);
-        fetchContacts(pagination.page, pageSize); // Refresh list
-      } catch (error) {
-        showError(error.message || 'Failed to delete contact');
-      }
-    } else {
-      // Show confirmation
-      setDeleteConfirmId(contact._id);
-      // Auto-hide confirmation after 5 seconds
-      setTimeout(() => {
-        setDeleteConfirmId(null);
-      }, 5000);
-    }
-  };
 
   const handleSelectContact = (contactId, isSelected) => {
     setSelectedContacts(prev => {
@@ -172,7 +157,7 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
     <div>
       {/* Search and Filter */}
       <div className="bg-white shadow rounded-lg p-6 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Search Contacts
@@ -208,6 +193,39 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
                 <option value="supplier">Supplier</option>
                 <option value="contractor">Contractor</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sort By
+            </label>
+            <div className="relative">
+              <MdSort className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <div className="flex gap-2">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="flex-1 border border-gray-200 rounded-sm px-3 py-2 pl-10 focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="createdAt">Date Created</option>
+                  <option value="updatedAt">Date Updated</option>
+                  <option value="firstName">First Name</option>
+                  <option value="lastName">Last Name</option>
+                  <option value="email">Email</option>
+                  <option value="phone">Phone</option>
+                  <option value="type">Type</option>
+                </select>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value)}
+                  className="border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
+                  title="Sort order"
+                >
+                  <option value="desc">↓ Desc</option>
+                  <option value="asc">↑ Asc</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -261,33 +279,10 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
               <div key={contact._id} className="relative">
                 <ContactCard
                   contact={contact}
-                  onEdit={onEdit}
-                  onDelete={handleDelete}
                   onView={onView}
                   isSelected={selectedContacts.has(contact._id)}
                   onSelect={handleSelectContact}
                 />
-                {deleteConfirmId === contact._id && (
-                  <div className="absolute inset-0 bg-red-50 border-2 border-red-500 rounded-lg p-4 flex flex-col items-center justify-center z-10">
-                    <p className="text-red-700 font-medium mb-3 text-center">
-                      Delete this contact?
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleDelete(contact)}
-                        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                      >
-                        Confirm Delete
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirmId(null)}
-                        className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>

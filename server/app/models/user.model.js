@@ -378,7 +378,39 @@ const User = mongoose.model(
                 enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
                 default: 'public'
             }
-        }
+        },
+        followSettings: {
+            type: String,
+            enum: ['anyone', 'request'],
+            default: 'request' // Default: require follow requests
+        },
+        connectionRequestSettings: {
+            whoCanSend: {
+                type: String,
+                enum: ['everyone', 'connections_of_connections', 'no_one'],
+                default: 'everyone'
+            },
+            requireManualAcceptance: {
+                type: Boolean,
+                default: true
+            }
+        },
+        followRequestSettings: {
+            whoCanSend: {
+                type: String,
+                enum: ['everyone', 'connections_of_connections', 'no_one'],
+                default: 'everyone'
+            },
+            requireManualAcceptance: {
+                type: Boolean,
+                default: true
+            }
+        },
+        blockedUsers: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            index: true
+        }]
     }, {
         timestamps: true // Adds createdAt and updatedAt automatically
     })

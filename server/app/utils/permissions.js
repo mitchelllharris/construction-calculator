@@ -107,7 +107,7 @@ async function canModifyComment(comment, activeAccountId, activePageId = null, p
  * @returns {Object} { allowed: boolean, reason?: string }
  */
 async function canEditProfile(profile, profileType, userId, activeAccountId, activePageId) {
-  if (!userId || !activeAccountId) {
+  if (!userId) {
     return { allowed: false, reason: 'You must be logged in to edit profiles' };
   }
 
@@ -117,23 +117,31 @@ async function canEditProfile(profile, profileType, userId, activeAccountId, act
       return { allowed: false, reason: 'User not found' };
     }
 
-    // User can only edit their own profile when active as that user
+    // User can only edit their own profile
     if (user._id.toString() !== userId.toString()) {
       return { allowed: false, reason: 'You can only edit your own profile' };
     }
 
-    if (user.accountId !== activeAccountId) {
-      return {
-        allowed: false,
-        reason: 'Switch to your personal account to edit this profile'
-      };
+    // If activeAccountId is provided, it must match user's accountId
+    // If not provided, allow editing own profile (fallback for compatibility)
+    if (activeAccountId) {
+      if (!user.accountId || Number(user.accountId) !== Number(activeAccountId)) {
+        return {
+          allowed: false,
+          reason: 'Switch to your personal account to edit this profile'
+        };
+      }
     }
 
-    if (user.pageId !== activePageId) {
-      return {
-        allowed: false,
-        reason: 'Switch to your personal account to edit this profile'
-      };
+    // pageId check is optional - only enforce if both are provided and don't match
+    if (activePageId && user.pageId && user.pageId !== activePageId) {
+      // Only fail if accountId also doesn't match (to avoid false positives)
+      if (activeAccountId && user.accountId && Number(user.accountId) !== Number(activeAccountId)) {
+        return {
+          allowed: false,
+          reason: 'Switch to your personal account to edit this profile'
+        };
+      }
     }
 
     return { allowed: true };

@@ -14,7 +14,7 @@ import API_BASE_URL from '../config/api';
  */
 export const getAllContacts = async (params = {}) => {
   try {
-    const { page = 1, limit = 20, search, type, status } = params;
+    const { page = 1, limit = 20, search, type, status, sortBy, sortOrder } = params;
     const queryParams = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
@@ -23,6 +23,8 @@ export const getAllContacts = async (params = {}) => {
     if (search) queryParams.append('search', search);
     if (type) queryParams.append('type', type);
     if (status) queryParams.append('status', status);
+    if (sortBy) queryParams.append('sortBy', sortBy);
+    if (sortOrder) queryParams.append('sortOrder', sortOrder);
     
     const url = `${API_ENDPOINTS.CONTACTS.GET_ALL}?${queryParams.toString()}`;
     const response = await get(url);

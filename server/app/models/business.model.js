@@ -292,6 +292,67 @@ const Business = mongoose.model(
         isVerified: {
             type: Boolean,
             default: false
+        },
+        // Privacy settings
+        emailPrivacy: {
+            type: String,
+            enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+            default: 'private'
+        },
+        privacySettings: {
+            phone: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'private'
+            },
+            website: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'private'
+            },
+            description: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            },
+            location: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            },
+            socialMedia: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            },
+            trade: {
+                type: String,
+                enum: ['public', 'contacts_of_contacts', 'contacts_only', 'private'],
+                default: 'public'
+            }
+        },
+        // Connection and follow request settings
+        connectionRequestSettings: {
+            whoCanSend: {
+                type: String,
+                enum: ['everyone', 'connections_of_connections', 'no_one'],
+                default: 'everyone'
+            },
+            requireManualAcceptance: {
+                type: Boolean,
+                default: true
+            }
+        },
+        followRequestSettings: {
+            whoCanSend: {
+                type: String,
+                enum: ['everyone', 'connections_of_connections', 'no_one'],
+                default: 'everyone'
+            },
+            requireManualAcceptance: {
+                type: Boolean,
+                default: true
+            }
         }
     }, {
         timestamps: true

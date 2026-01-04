@@ -48,6 +48,10 @@ exports.getAllContacts = async (req, res) => {
         // Build query
         const query = { user: req.userId };
 
+        // Debug logging
+        logger.info(`[getAllContacts] Fetching contacts for user: ${req.userId}`);
+        logger.info(`[getAllContacts] Query params:`, { page, limit, skip, type: req.query.type, status: req.query.status, search: req.query.search });
+
         // Optional filters
         if (req.query.type) {
             query.type = req.query.type;
@@ -96,15 +100,43 @@ exports.getAllContacts = async (req, res) => {
             query.$or = searchOr;
         }
 
+        // Build sort object
+        const sortBy = req.query.sortBy || 'createdAt';
+        const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+        
+        // Validate sortBy field to prevent NoSQL injection
+        const allowedSortFields = ['firstName', 'lastName', 'email', 'phone', 'type', 'createdAt', 'updatedAt'];
+        const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const sortObject = { [validSortBy]: sortOrder };
+
         // Get contacts with pagination
+        logger.info(`[getAllContacts] Final query:`, JSON.stringify(query));
+        logger.info(`[getAllContacts] Sort:`, sortObject);
         const contacts = await Contact.find(query)
-            .sort({ createdAt: -1 })
+            .populate('platformUserId', 'username firstName lastName avatar accountId')
+            .sort(sortObject)
             .skip(skip)
             .limit(limit)
             .select('-__v');
 
         // Get total count for pagination
         const total = await Contact.countDocuments(query);
+
+        // Debug logging
+        logger.info(`[getAllContacts] Found ${contacts.length} contacts (total: ${total}) for user: ${req.userId}`);
+        if (contacts.length > 0) {
+            logger.info(`[getAllContacts] Sample contacts:`, contacts.slice(0, 3).map(c => ({
+                _id: c._id,
+                firstName: c.firstName,
+                lastName: c.lastName,
+                email: c.email,
+                type: c.type,
+                status: c.status,
+                createdAt: c.createdAt
+            })));
+        } else {
+            logger.warn(`[getAllContacts] No contacts found for user: ${req.userId} with query:`, JSON.stringify(query));
+        }
 
         return res.status(200).json({
             contacts,
@@ -125,13 +157,55 @@ exports.getAllContacts = async (req, res) => {
 // Get a contact by ID
 exports.getContactById = async (req, res) => {
     try {
-        const contact = await Contact.findOne({
+        let contact = await Contact.findOne({
             _id: req.params.id,
             user: req.userId
-        });
+        })
+        .populate('platformUserId', 'username firstName lastName avatar accountId');
+        
         if (!contact) {
             return res.status(404).send({ message: "Contact not found" });
         }
+
+        // If contact doesn't have platformUserId but has email/phone, check if it matches a user
+        if (!contact.platformUserId && (contact.email || contact.phone)) {
+            let matchingUser = null;
+            
+            // Try to find user by email first
+            if (contact.email) {
+                matchingUser = await User.findOne({ 
+                    email: contact.email.toLowerCase().trim() 
+                }).select('_id username firstName lastName avatar accountId email phone');
+            }
+            
+            // If no email match and phone exists, try phone match
+            if (!matchingUser && contact.phone) {
+                // Normalize phone for comparison (remove all non-digits)
+                const normalizedPhone = contact.phone.replace(/\D/g, '');
+                if (normalizedPhone && normalizedPhone.length >= 10) {
+                    // Try to match by last 10 digits of phone
+                    const phoneSuffix = normalizedPhone.slice(-10);
+                    const users = await User.find({
+                        phone: { $regex: phoneSuffix }
+                    }).select('_id username firstName lastName avatar accountId email phone').limit(1);
+                    
+                    if (users.length > 0) {
+                        matchingUser = users[0];
+                    }
+                }
+            }
+            
+            // If we found a matching user, link the contact
+            if (matchingUser) {
+                contact.platformUserId = matchingUser._id;
+                contact.isPlatformUser = true;
+                await contact.save();
+                // Re-populate after save
+                await contact.populate('platformUserId', 'username firstName lastName avatar accountId');
+                logger.info(`[getContactById] Linked contact ${contact._id} to platform user ${matchingUser._id} (${matchingUser.username || matchingUser.email})`);
+            }
+        }
+        
         return res.status(200).send(contact);
     } catch (error) {
         logger.error("Error getting contact:", error);

@@ -83,6 +83,19 @@ const Contact = mongoose.model(
             enum: ['active', 'inactive', 'archived'],
             default: 'active'
         },
+        // Link to platform user if this contact is from a connection
+        platformUserId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            index: true,
+            sparse: true
+        },
+        // Indicates if this contact was created from a connection (platform user)
+        isPlatformUser: {
+            type: Boolean,
+            default: false,
+            index: true
+        },
         createdAt: {
             type: Date,
             default: Date.now

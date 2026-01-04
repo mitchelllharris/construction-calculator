@@ -26,6 +26,8 @@ import CreateBusiness from './pages/CreateBusiness.jsx'
 import Business from './pages/Business.jsx'
 import EditBusiness from './pages/EditBusiness.jsx'
 import MyBusinesses from './pages/MyBusinesses.jsx'
+import Following from './pages/Following.jsx'
+import BlockedUsers from './pages/BlockedUsers.jsx'
 import VerifyEmail from './pages/VerifyEmail.jsx'
 import ResendVerification from './pages/ResendVerification.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
@@ -137,6 +139,22 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <MyBusinesses />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/following" 
+            element={
+              <ProtectedRoute>
+                <Following />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/blocked-users" 
+            element={
+              <ProtectedRoute>
+                <BlockedUsers />
               </ProtectedRoute>
             }
           />

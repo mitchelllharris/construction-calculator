@@ -4,6 +4,7 @@ const User = db.user;
 const Page = db.page;
 const logger = require("../utils/logger");
 const { generateAccountId, generatePageId } = require("../utils/accountId");
+const { canEditProfile, getActiveAccountContext } = require("../utils/permissions");
 
 // Generate a unique slug from business name
 const generateSlug = async (businessName) => {
@@ -398,6 +399,74 @@ exports.updateBusiness = async (req, res) => {
                 } else {
                     updates[field] = req.body[field];
                 }
+            }
+        }
+
+        // Update email privacy setting
+        if (req.body.hasOwnProperty('emailPrivacy')) {
+            const validPrivacyOptions = ['public', 'contacts_of_contacts', 'contacts_only', 'private'];
+            if (validPrivacyOptions.includes(req.body.emailPrivacy)) {
+                updates.emailPrivacy = req.body.emailPrivacy;
+            }
+        }
+
+        // Update privacy settings
+        if (req.body.hasOwnProperty('privacySettings') && typeof req.body.privacySettings === 'object') {
+            const validPrivacyOptions = ['public', 'contacts_of_contacts', 'contacts_only', 'private'];
+            const privacyFields = ['phone', 'website', 'description', 'location', 'socialMedia', 'trade'];
+            
+            // Create a copy of existing privacy settings or initialize empty object
+            updates.privacySettings = business.privacySettings ? { ...business.privacySettings } : {};
+            
+            privacyFields.forEach(field => {
+                if (req.body.privacySettings.hasOwnProperty(field) && 
+                    validPrivacyOptions.includes(req.body.privacySettings[field])) {
+                    updates.privacySettings[field] = req.body.privacySettings[field];
+                }
+            });
+        }
+
+        // Update connection request settings
+        if (req.body.hasOwnProperty('connectionRequestSettings') && typeof req.body.connectionRequestSettings === 'object') {
+            const validWhoCanSend = ['everyone', 'connections_of_connections', 'no_one'];
+            const settings = req.body.connectionRequestSettings;
+            
+            // Create a copy of existing connection request settings or initialize with defaults
+            updates.connectionRequestSettings = business.connectionRequestSettings ? 
+                { ...business.connectionRequestSettings } : 
+                {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                };
+            
+            if (settings.hasOwnProperty('whoCanSend') && validWhoCanSend.includes(settings.whoCanSend)) {
+                updates.connectionRequestSettings.whoCanSend = settings.whoCanSend;
+            }
+            
+            if (settings.hasOwnProperty('requireManualAcceptance') && typeof settings.requireManualAcceptance === 'boolean') {
+                updates.connectionRequestSettings.requireManualAcceptance = settings.requireManualAcceptance;
+            }
+        }
+
+        // Update follow request settings
+        if (req.body.hasOwnProperty('followRequestSettings') && typeof req.body.followRequestSettings === 'object') {
+            const validWhoCanSend = ['everyone', 'connections_of_connections', 'no_one'];
+            const settings = req.body.followRequestSettings;
+            
+            // Create a copy of existing follow request settings or initialize with defaults
+            updates.followRequestSettings = business.followRequestSettings ? 
+                { ...business.followRequestSettings } : 
+                {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                };
+            
+            if (settings.hasOwnProperty('whoCanSend') && validWhoCanSend.includes(settings.whoCanSend)) {
+                updates.followRequestSettings.whoCanSend = settings.whoCanSend;
+            }
+            
+            if (settings.hasOwnProperty('requireManualAcceptance') && typeof settings.requireManualAcceptance === 'boolean') {
+                updates.followRequestSettings.requireManualAcceptance = settings.requireManualAcceptance;
             }
         }
 

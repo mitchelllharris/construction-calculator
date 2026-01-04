@@ -1,24 +1,56 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
-import { createContact, updateContact, bulkDeleteContacts, exportContacts, deleteContact } from '../utils/contactApi';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
+import { createContact, updateContact, bulkDeleteContacts, exportContacts } from '../utils/contactApi';
+import { getPendingRequests, acceptConnectionRequest, rejectConnectionRequest, blockUser } from '../utils/connectionApi';
+import { getPendingFollowRequests, acceptFollowRequest, rejectFollowRequest } from '../utils/followApi';
+import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
 import ContactList from '../components/ContactList';
 import ContactForm from '../components/ContactForm';
-import ContactDetailModal from '../components/ContactDetailModal';
 import BulkActionsBar from '../components/BulkActionsBar';
 import ContactImportModal from '../components/ContactImportModal';
 import Button from '../components/Button';
-import { MdAdd, MdClose, MdFileDownload, MdFileUpload } from 'react-icons/md';
+import { MdAdd, MdClose, MdFileDownload, MdFileUpload, MdPersonAdd, MdCheck } from 'react-icons/md';
 
 export default function Contacts() {
   const { showSuccess, showError } = useToast();
+  const { activeProfile, isUserProfile, loading: profileLoading } = useProfileSwitcher();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
-  const [viewingContact, setViewingContact] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  const [loadingIncoming, setLoadingIncoming] = useState(false);
+  const [connectionLoading, setConnectionLoading] = useState({});
   const formRef = useRef(null);
+
+  // Check for edit query param on mount
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId && !editingContact) {
+      // Fetch the contact and open edit mode
+      const fetchContactForEdit = async () => {
+        try {
+          const { getContactById } = await import('../utils/contactApi');
+          const contact = await getContactById(editId);
+          handleEdit(contact);
+          // Remove edit param from URL
+          setSearchParams({});
+        } catch (error) {
+          console.error('[Contacts] Error fetching contact for edit:', error);
+          showError('Failed to load contact for editing');
+          setSearchParams({});
+        }
+      };
+      fetchContactForEdit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, editingContact]);
 
   const handleCreate = () => {
     setEditingContact(null);
@@ -70,7 +102,7 @@ export default function Contacts() {
   };
 
   const handleView = (contact) => {
-    setViewingContact(contact);
+    navigate(`/contacts/${contact._id}`);
   };
 
   const handleBulkDelete = async () => {
@@ -138,17 +170,93 @@ export default function Contacts() {
     setRefreshTrigger((prev) => prev + 1);
   };
 
-  const handleDelete = async (contact) => {
+
+  // Fetch incoming connection requests
+  const fetchIncomingRequests = useCallback(async () => {
+    setLoadingIncoming(true);
     try {
-      await deleteContact(contact._id);
-      showSuccess('Contact deleted successfully');
-      setRefreshTrigger((prev) => prev + 1);
-      if (viewingContact && viewingContact._id === contact._id) {
-        setViewingContact(null);
+      const recipientType = isUserProfile && activeProfile?.type === 'user' ? 'User' : 'Business';
+      const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+      const data = await getPendingRequests(recipientType, businessId);
+      setIncomingRequests(data.requests || []);
+    } catch (error) {
+      showError(error.message || 'Failed to load incoming requests');
+    } finally {
+      setLoadingIncoming(false);
+    }
+  }, [isUserProfile, isBusinessProfile, activeProfile, showError]);
+
+  // Fetch pending follow requests
+  const fetchPendingFollowRequests = useCallback(async () => {
+    if (!isUserProfile || activeProfile?.type !== 'user') {
+      return;
+    }
+
+    setLoadingFollowRequests(true);
+    try {
+      const data = await getPendingFollowRequests();
+      setPendingFollowRequests(data.requests || []);
+    } catch (error) {
+      showError(error.message || 'Failed to load pending follow requests');
+    } finally {
+      setLoadingFollowRequests(false);
+    }
+  }, [isUserProfile, activeProfile, showError]);
+
+  // Load incoming requests on mount
+  useEffect(() => {
+    if (!profileLoading && activeProfile && isUserProfile && activeProfile?.type === 'user') {
+      fetchIncomingRequests();
+      fetchPendingFollowRequests();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoading, activeProfile?.type, isUserProfile]);
+
+  // Handle accepting/rejecting connection requests
+  const handleConnectionAction = async (action, connectionId, userId) => {
+    setConnectionLoading(prev => ({ ...prev, [userId]: true }));
+    try {
+      if (action === 'accept') {
+        await acceptConnectionRequest(connectionId);
+        showSuccess('Connection request accepted');
+      } else {
+        await rejectConnectionRequest(connectionId);
+        showSuccess('Connection request rejected');
+      }
+      fetchIncomingRequests();
+      // Refresh contact list and connections if we accepted (contact is automatically created)
+      if (action === 'accept') {
+        // Add a small delay to ensure backend has finished creating the contact
+        setTimeout(() => {
+          setRefreshTrigger((prev) => prev + 1);
+        }, 500); // 500ms delay to allow backend to complete contact creation
       }
     } catch (error) {
-      showError(error.message || 'Failed to delete contact');
+      showError(error.message || `Failed to ${action} connection request`);
+    } finally {
+      setConnectionLoading(prev => ({ ...prev, [userId]: false }));
     }
+  };
+
+
+  const getImageUrl = (url) => {
+    if (!url) return null;
+    return url.startsWith('http') 
+      ? url 
+      : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${url}`;
+  };
+
+  const getInitials = (user) => {
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+    }
+    if (user?.firstName) {
+      return user.firstName.charAt(0).toUpperCase();
+    }
+    if (user?.username) {
+      return user.username.charAt(0).toUpperCase();
+    }
+    return '?';
   };
 
   return (
@@ -156,9 +264,9 @@ export default function Contacts() {
       {/* Header */}
       <div className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Contacts</h1>
+          <h1 className="text-3xl font-bold mb-2">Connections & Networking</h1>
           <p className="text-gray-600">
-            Manage your contacts - clients, suppliers, contractors, and more
+            Manage your connections and professional network
           </p>
         </div>
         {!showForm && (
@@ -209,6 +317,103 @@ export default function Contacts() {
         </div>
       )}
 
+      {/* Incoming Connection Requests */}
+      {(isUserProfile || isBusinessProfile) && incomingRequests.length > 0 && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <MdPersonAdd size={24} />
+            Connection Requests ({incomingRequests.length})
+          </h2>
+          {loadingIncoming ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {incomingRequests.map((conn) => {
+                const requester = conn.requester;
+                const userId = requester?._id || requester?.id;
+                const isLoading = connectionLoading[userId];
+                return (
+                  <div
+                    key={conn._id}
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start gap-3 mb-3">
+                      {getImageUrl(requester?.avatar) ? (
+                        <img
+                          src={getImageUrl(requester?.avatar)}
+                          alt={requester?.firstName || requester?.username}
+                          className="w-12 h-12 rounded-full object-cover shrink-0 cursor-pointer"
+                          onClick={() => navigate(`/profile/${requester?.username}`)}
+                        />
+                      ) : (
+                        <div 
+                          className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold shrink-0 cursor-pointer"
+                          onClick={() => navigate(`/profile/${requester?.username}`)}
+                        >
+                          {getInitials(requester)}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 
+                          className="font-semibold text-gray-900 truncate cursor-pointer hover:text-blue-600"
+                          onClick={() => navigate(`/profile/${requester?.username}`)}
+                        >
+                          {requester?.firstName && requester?.lastName
+                            ? `${requester.firstName} ${requester.lastName}`
+                            : requester?.username || 'Unknown User'}
+                        </h3>
+                        <p className="text-sm text-gray-500 truncate">@{requester?.username}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => handleConnectionAction('accept', conn._id, userId)}
+                        disabled={isLoading}
+                        className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1 disabled:opacity-50"
+                      >
+                        <MdCheck size={16} />
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleConnectionAction('reject', conn._id, userId)}
+                        disabled={isLoading}
+                        className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center justify-center gap-1 disabled:opacity-50"
+                      >
+                        <MdClose size={16} />
+                        Reject
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (window.confirm('Are you sure you want to block this user? This will prevent them from contacting you.')) {
+                            setConnectionLoading(prev => ({ ...prev, [userId]: true }));
+                            try {
+                              await blockUser(userId);
+                              showSuccess('User blocked');
+                              fetchIncomingRequests();
+                            } catch (error) {
+                              showError(error.message || 'Failed to block user');
+                            } finally {
+                              setConnectionLoading(prev => ({ ...prev, [userId]: false }));
+                            }
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="px-3 py-2 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center justify-center gap-1 disabled:opacity-50"
+                        title="Block user"
+                      >
+                        <MdClose size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Bulk Actions Bar */}
       <BulkActionsBar
         selectedCount={selectedContacts.size}
@@ -224,19 +429,6 @@ export default function Contacts() {
         onRefresh={refreshTrigger}
         onSelectedContactsChange={setSelectedContacts}
       />
-
-      {/* Contact Detail Modal */}
-      {viewingContact && (
-        <ContactDetailModal
-          contact={viewingContact}
-          onClose={() => setViewingContact(null)}
-          onEdit={(contact) => {
-            setViewingContact(null);
-            handleEdit(contact);
-          }}
-          onDelete={handleDelete}
-        />
-      )}
 
       {/* Import Modal */}
       {showImportModal && (

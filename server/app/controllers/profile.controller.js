@@ -64,6 +64,14 @@ exports.getProfile = async (req, res) => {
             socialMedia: user.socialMedia || {},
             emailPrivacy: user.emailPrivacy || 'private',
             privacySettings: user.privacySettings || {},
+            connectionRequestSettings: user.connectionRequestSettings || {
+                whoCanSend: 'everyone',
+                requireManualAcceptance: true
+            },
+            followRequestSettings: user.followRequestSettings || {
+                whoCanSend: 'everyone',
+                requireManualAcceptance: true
+            },
             roles: authorities,
             accountId: user.accountId || null, // Add accountId
             pageId: pageId, // Add pageId
@@ -200,6 +208,48 @@ exports.updateProfile = async (req, res) => {
             });
         }
 
+        // Update connection request settings
+        if (req.body.hasOwnProperty('connectionRequestSettings') && typeof req.body.connectionRequestSettings === 'object') {
+            const validWhoCanSend = ['everyone', 'connections_of_connections', 'no_one'];
+            const settings = req.body.connectionRequestSettings;
+            
+            if (!updates.connectionRequestSettings) {
+                updates.connectionRequestSettings = user.connectionRequestSettings || {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                };
+            }
+            
+            if (settings.hasOwnProperty('whoCanSend') && validWhoCanSend.includes(settings.whoCanSend)) {
+                updates.connectionRequestSettings.whoCanSend = settings.whoCanSend;
+            }
+            
+            if (settings.hasOwnProperty('requireManualAcceptance') && typeof settings.requireManualAcceptance === 'boolean') {
+                updates.connectionRequestSettings.requireManualAcceptance = settings.requireManualAcceptance;
+            }
+        }
+
+        // Update follow request settings
+        if (req.body.hasOwnProperty('followRequestSettings') && typeof req.body.followRequestSettings === 'object') {
+            const validWhoCanSend = ['everyone', 'connections_of_connections', 'no_one'];
+            const settings = req.body.followRequestSettings;
+            
+            if (!updates.followRequestSettings) {
+                updates.followRequestSettings = user.followRequestSettings || {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                };
+            }
+            
+            if (settings.hasOwnProperty('whoCanSend') && validWhoCanSend.includes(settings.whoCanSend)) {
+                updates.followRequestSettings.whoCanSend = settings.whoCanSend;
+            }
+            
+            if (settings.hasOwnProperty('requireManualAcceptance') && typeof settings.requireManualAcceptance === 'boolean') {
+                updates.followRequestSettings.requireManualAcceptance = settings.requireManualAcceptance;
+            }
+        }
+
         // Update tradie-specific fields - always update if field is present in request
         if (req.body.hasOwnProperty('trade')) updates.trade = trade ? trade.trim() : null;
         if (req.body.hasOwnProperty('businessName')) updates.businessName = businessName ? businessName.trim() : null;
@@ -293,6 +343,14 @@ exports.updateProfile = async (req, res) => {
             socialMedia: updatedUser.socialMedia || {},
                 emailPrivacy: updatedUser.emailPrivacy || 'private',
                 privacySettings: updatedUser.privacySettings || {},
+                connectionRequestSettings: updatedUser.connectionRequestSettings || {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                },
+                followRequestSettings: updatedUser.followRequestSettings || {
+                    whoCanSend: 'everyone',
+                    requireManualAcceptance: true
+                },
                 roles: authorities,
                 createdAt: updatedUser.createdAt,
                 updatedAt: updatedUser.updatedAt
@@ -420,6 +478,16 @@ exports.getPublicProfile = async (req, res) => {
 
         if (!user) {
             return res.status(404).send({ message: "User not found" });
+        }
+
+        // Check if viewer is blocked by profile owner
+        if (viewerUserId) {
+            const profileOwner = await User.findById(user._id).select('blockedUsers');
+            if (profileOwner && profileOwner.blockedUsers && profileOwner.blockedUsers.some(
+                id => id.toString() === viewerUserId.toString()
+            )) {
+                return res.status(403).send({ message: "You are blocked from viewing this profile" });
+            }
         }
 
         // Get pageId for this user

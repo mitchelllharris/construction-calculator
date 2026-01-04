@@ -1,7 +1,9 @@
 import React from 'react';
-import { MdEdit, MdDelete, MdEmail, MdPhone, MdLocationOn, MdBusiness, MdTag } from 'react-icons/md';
+import { useNavigate } from 'react-router-dom';
+import { MdEmail, MdPhone, MdLocationOn, MdBusiness, MdTag, MdPerson } from 'react-icons/md';
 
-export default function ContactCard({ contact, onEdit, onDelete, onView, isSelected, onSelect }) {
+export default function ContactCard({ contact, onView, isSelected, onSelect }) {
+  const navigate = useNavigate();
   const getTypeColor = (type) => {
     const colors = {
       client: 'bg-blue-100 text-blue-800',
@@ -36,10 +38,14 @@ export default function ContactCard({ contact, onEdit, onDelete, onView, isSelec
     ? (contact.avatar.startsWith('http') ? contact.avatar : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.avatar}`)
     : null;
 
+  const handleCardClick = () => {
+    navigate(`/contacts/${contact._id}`);
+  };
+
   return (
     <div 
       className={`bg-white shadow rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-      onClick={() => onView && onView(contact)}
+      onClick={handleCardClick}
     >
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-3 flex-1">
@@ -87,22 +93,6 @@ export default function ContactCard({ contact, onEdit, onDelete, onView, isSelec
               </span>
             </div>
           </div>
-        </div>
-        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => onEdit(contact)}
-            className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            title="Edit contact"
-          >
-            <MdEdit size={20} />
-          </button>
-          <button
-            onClick={() => onDelete(contact)}
-            className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-            title="Delete contact"
-          >
-            <MdDelete size={20} />
-          </button>
         </div>
       </div>
 

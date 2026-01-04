@@ -14,6 +14,8 @@ db.profileView = require('./profileView.model.js');
 db.post = require('./post.model.js');
 db.business = require('./business.model.js');
 db.page = require('./page.model.js');
+db.connection = require('./connection.model.js');
+db.follow = require('./follow.model.js');
 
 db.ROLES = [
     'user',

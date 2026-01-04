@@ -248,6 +248,22 @@ export default function Dashboard() {
           >
             → My Businesses
           </Link>
+          {isUserProfile && activeProfile?.type === 'user' && (
+            <>
+              <Link
+                to="/following"
+                className="block text-blue-600 hover:text-blue-800"
+              >
+                → Following
+              </Link>
+              <Link
+                to="/blocked-users"
+                className="block text-blue-600 hover:text-blue-800"
+              >
+                → Blocked Users
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
-import { getContactById } from '../utils/contactApi';
+import { getContactById, deleteContact } from '../utils/contactApi';
 import { getContactInteractions, createInteraction, updateInteraction, deleteInteraction } from '../utils/interactionApi';
-import { MdArrowBack, MdEdit, MdDelete, MdEmail, MdPhone, MdLocationOn, MdBusiness, MdNotes, MdTag, MdAdd, MdCall, MdEvent, MdTask, MdCheckCircle, MdSchedule, MdCancel } from 'react-icons/md';
+import { getConnectionStatus, removeConnection, blockUser, unblockUser } from '../utils/connectionApi';
+import { getFollowStatus, followUser, unfollowUser } from '../utils/followApi';
+import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
+import { MdArrowBack, MdEdit, MdDelete, MdEmail, MdPhone, MdLocationOn, MdBusiness, MdNotes, MdTag, MdAdd, MdCall, MdEvent, MdTask, MdCheckCircle, MdSchedule, MdCancel, MdPerson, MdOpenInNew, MdMail } from 'react-icons/md';
 import Button from '../components/Button';
 import LoadingPage from '../components/LoadingPage';
 
@@ -11,10 +15,13 @@ export default function ContactDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
+  const { activeProfile, isUserProfile } = useProfileSwitcher();
   
   const [contact, setContact] = useState(null);
   const [interactions, setInteractions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [followStatus, setFollowStatus] = useState(null);
   const [showInteractionForm, setShowInteractionForm] = useState(false);
   const [editingInteraction, setEditingInteraction] = useState(null);
   const [formData, setFormData] = useState({
@@ -30,7 +37,20 @@ export default function ContactDetail() {
   useEffect(() => {
     fetchContact();
     fetchInteractions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (contact?.isPlatformUser && contact?.platformUserId?._id && isUserProfile && activeProfile?.type === 'user') {
+      fetchConnectionStatus();
+      fetchFollowStatus();
+    } else if (!contact?.isPlatformUser) {
+      // Reset connection status if contact is not a platform user
+      setConnectionStatus(null);
+      setFollowStatus(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contact?.isPlatformUser, contact?.platformUserId?._id, isUserProfile, activeProfile?.type]);
 
   const fetchContact = async () => {
     try {
@@ -50,6 +70,80 @@ export default function ContactDetail() {
       setInteractions(interactionsData);
     } catch (error) {
       console.error('Failed to load interactions:', error);
+    }
+  };
+
+  const fetchConnectionStatus = async () => {
+    if (!contact?.platformUserId?._id) {
+      setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+      return;
+    }
+    try {
+      const statusData = await getConnectionStatus(contact.platformUserId._id);
+      setConnectionStatus(statusData);
+    } catch {
+      // User might not be connected, that's okay - set default status
+      setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+    }
+  };
+
+  const fetchFollowStatus = async () => {
+    if (!contact?.platformUserId?._id) {
+      setFollowStatus({ status: 'none', follow: null });
+      return;
+    }
+    try {
+      const statusData = await getFollowStatus(contact.platformUserId._id);
+      setFollowStatus(statusData);
+    } catch {
+      // User might not be following, that's okay - set default status
+      setFollowStatus({ status: 'none', follow: null });
+    }
+  };
+
+  const handleConnectionAction = async (action, connectionId, userId) => {
+    if (!isUserProfile || activeProfile?.type !== 'user') {
+      showError('You must be logged in as a user to manage connections');
+      return;
+    }
+
+    try {
+      switch (action) {
+        case 'follow':
+          const followResult = await followUser(userId);
+          if (followResult.follow.status === 'accepted') {
+            showSuccess('Now following this user');
+          } else {
+            showSuccess('Follow request sent');
+          }
+          await fetchFollowStatus();
+          break;
+        case 'unfollow':
+          await unfollowUser(userId);
+          showSuccess('Unfollowed this user');
+          await fetchFollowStatus();
+          break;
+        case 'remove':
+          await removeConnection(connectionId);
+          showSuccess('Connection removed');
+          await fetchConnectionStatus();
+          break;
+        case 'block':
+          await blockUser(userId);
+          showSuccess('User blocked');
+          break;
+        case 'unblock':
+          await unblockUser(userId);
+          showSuccess('User unblocked');
+          break;
+        default:
+          throw new Error('Invalid action');
+      }
+
+      // Refresh connection status
+      await fetchConnectionStatus();
+    } catch (err) {
+      showError(err.message || 'Failed to perform connection action');
     }
   };
 
@@ -146,7 +240,7 @@ export default function ContactDetail() {
       supplier: 'bg-green-100 text-green-800',
       contractor: 'bg-orange-100 text-orange-800',
     };
-    return colors[contact?.type] || 'bg-gray-100 text-gray-800';
+    return colors[type] || 'bg-gray-100 text-gray-800';
   };
 
   const getInitials = (firstName, lastName) => {
@@ -189,13 +283,32 @@ export default function ContactDetail() {
         <div className="flex-1">
           <h1 className="text-3xl font-bold text-gray-900">Contact Profile</h1>
         </div>
-        <Button
-          onClick={() => navigate('/contacts')}
-          className="flex items-center gap-2"
-        >
-          <MdEdit size={20} />
-          Edit Contact
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => navigate(`/contacts?edit=${id}`)}
+            className="flex items-center gap-2"
+          >
+            <MdEdit size={20} />
+            Edit Contact
+          </Button>
+          <Button
+            onClick={async () => {
+              if (window.confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
+                try {
+                  await deleteContact(id);
+                  showSuccess('Contact deleted successfully');
+                  navigate('/contacts');
+                } catch (error) {
+                  showError(error.message || 'Failed to delete contact');
+                }
+              }
+            }}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700"
+          >
+            <MdDelete size={20} />
+            Delete Contact
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -220,9 +333,54 @@ export default function ContactDetail() {
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {contact.firstName} {contact.lastName}
               </h2>
-              <span className={`inline-block px-3 py-1 text-sm font-medium rounded ${getTypeColor(contact.type)}`}>
-                {contact.type ? contact.type.charAt(0).toUpperCase() + contact.type.slice(1) : 'Client'}
-              </span>
+              <div className="flex items-center justify-center gap-2 flex-wrap mb-4">
+                <span className={`inline-block px-3 py-1 text-sm font-medium rounded ${getTypeColor(contact.type)}`}>
+                  {contact.type ? contact.type.charAt(0).toUpperCase() + contact.type.slice(1) : 'Client'}
+                </span>
+              </div>
+              {contact.isPlatformUser && contact.platformUserId?.username ? (
+                <div className="mt-4 space-y-2">
+                  <Button
+                    onClick={() => navigate(`/profile/${contact.platformUserId.username}`)}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center gap-2"
+                  >
+                    <MdPerson size={18} />
+                    View Platform Profile
+                    <MdOpenInNew size={16} />
+                  </Button>
+                  {isUserProfile && activeProfile?.type === 'user' && contact.isPlatformUser && contact.platformUserId?._id && connectionStatus && followStatus && (
+                    <div className="flex justify-center mt-2">
+                      <ConnectionActionsMenu
+                        connectionStatus={connectionStatus.status || 'none'}
+                        followStatus={followStatus.status || 'none'}
+                        isFollowing={followStatus.status === 'accepted'}
+                        connectionId={connectionStatus.connection?._id}
+                        userId={contact.platformUserId._id}
+                        onAction={handleConnectionAction}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                contact.email && (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const subject = encodeURIComponent(`Join ${import.meta.env.VITE_APP_NAME || 'our platform'}`);
+                        const body = encodeURIComponent(`Hi ${contact.firstName},\n\nI'd like to invite you to join ${import.meta.env.VITE_APP_NAME || 'our platform'} to connect and collaborate.\n\nSign up here: ${window.location.origin}/register`);
+                        window.open(`mailto:${contact.email}?subject=${subject}&body=${body}`, '_blank');
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-sm font-medium transition-colors cursor-pointer"
+                      title="Send invitation email"
+                    >
+                      <MdMail size={18} />
+                      Invite to Platform
+                    </button>
+                  </div>
+                )
+              )}
             </div>
 
             {/* Contact Information */}

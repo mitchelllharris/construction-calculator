@@ -5,7 +5,19 @@ import { API_ENDPOINTS } from '../config/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
-import { MdSearch, MdPerson, MdBusiness, MdLocationOn, MdWork } from 'react-icons/md';
+import { 
+  sendConnectionRequest, 
+  acceptConnectionRequest, 
+  rejectConnectionRequest,
+  getConnectionStatus,
+  getConnections,
+  removeConnection,
+  blockUser,
+  unblockUser
+} from '../utils/connectionApi';
+import { getFollowStatus, followUser, unfollowUser } from '../utils/followApi';
+import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
+import { MdSearch, MdPerson, MdBusiness, MdLocationOn, MdWork, MdPersonAdd, MdCheck, MdClose, MdHourglassEmpty } from 'react-icons/md';
 
 export default function FindPeople() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,10 +25,69 @@ export default function FindPeople() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [connectionStatuses, setConnectionStatuses] = useState({});
+  const [followStatuses, setFollowStatuses] = useState({});
+  const [connectionLoading, setConnectionLoading] = useState({});
+  const [outgoingRequests, setOutgoingRequests] = useState([]);
+  const [loadingOutgoing, setLoadingOutgoing] = useState(false);
   const navigate = useNavigate();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const { user } = useAuth();
   const { activeProfile, isBusinessProfile, isUserProfile, loading: profileLoading } = useProfileSwitcher();
+
+  // Fetch connection statuses for multiple users
+  const fetchConnectionStatuses = useCallback(async (users) => {
+    if (!isUserProfile || activeProfile?.type !== 'user') return;
+    
+    const userList = users.filter(user => !user.isBusiness && user._id);
+    
+    // Fetch connection statuses
+    const connectionPromises = userList.map(async (user) => {
+      try {
+        const statusData = await getConnectionStatus(user._id);
+        return { 
+          userId: user._id, 
+          status: statusData.status, 
+          connection: statusData.connection,
+          isBlocked: statusData.isBlocked || false
+        };
+      } catch {
+        return { userId: user._id, status: 'none', connection: null, isBlocked: false };
+      }
+    });
+    
+    // Fetch follow statuses
+    const followPromises = userList.map(async (user) => {
+      try {
+        const followData = await getFollowStatus(user._id);
+        return { 
+          userId: user._id, 
+          followStatus: followData.status, 
+          follow: followData.follow
+        };
+      } catch {
+        return { userId: user._id, followStatus: 'none', follow: null };
+      }
+    });
+    
+    const [connectionStatuses, followStatuses] = await Promise.all([
+      Promise.all(connectionPromises),
+      Promise.all(followPromises)
+    ]);
+    
+    const connectionMap = {};
+    connectionStatuses.forEach(({ userId, status, connection, isBlocked }) => {
+      connectionMap[userId] = { status, connection, isBlocked };
+    });
+    
+    const followMap = {};
+    followStatuses.forEach(({ userId, followStatus, follow }) => {
+      followMap[userId] = { status: followStatus, follow };
+    });
+    
+    setConnectionStatuses(prev => ({ ...prev, ...connectionMap }));
+    setFollowStatuses(prev => ({ ...prev, ...followMap }));
+  }, [isUserProfile, activeProfile]);
 
   // Debounced search function
   const performSearch = useCallback(async (term, type) => {
@@ -113,6 +184,11 @@ export default function FindPeople() {
         const data = await response.json();
         const users = (data.users || []).map(user => ({ ...user, isBusiness: false }));
         setResults(users);
+        
+        // Fetch connection statuses for users (only if logged in as a user)
+        if (isUserProfile && activeProfile?.type === 'user') {
+          fetchConnectionStatuses(users);
+        }
       } else {
         // Search both people and businesses
         const userSearchUrl = new URL(API_ENDPOINTS.USER.SEARCH(term, 'people', 1, 20));
@@ -164,6 +240,11 @@ export default function FindPeople() {
 
         const combinedResults = [...formattedUsers, ...formattedBusinesses];
         setResults(combinedResults);
+        
+        // Fetch connection statuses for users (only if logged in as a user)
+        if (isUserProfile && activeProfile?.type === 'user') {
+          fetchConnectionStatuses(formattedUsers);
+        }
       }
     } catch (error) {
       showError(error.message || 'Failed to search');
@@ -171,7 +252,31 @@ export default function FindPeople() {
     } finally {
       setLoading(false);
     }
-  }, [showError, activeProfile, isBusinessProfile, isUserProfile, profileLoading, user]);
+  }, [showError, activeProfile, isBusinessProfile, isUserProfile, profileLoading, user, fetchConnectionStatuses]);
+
+  // Fetch outgoing connection requests
+  const fetchOutgoingRequests = useCallback(async () => {
+    if (!isUserProfile || activeProfile?.type !== 'user') {
+      return;
+    }
+
+    setLoadingOutgoing(true);
+    try {
+      const data = await getConnections({ status: 'pending', type: 'sent' });
+      setOutgoingRequests(data.connections || []);
+    } catch (error) {
+      showError(error.message || 'Failed to load outgoing requests');
+    } finally {
+      setLoadingOutgoing(false);
+    }
+  }, [isUserProfile, activeProfile, showError]);
+
+  // Load outgoing requests on mount and after connection actions
+  useEffect(() => {
+    if (!profileLoading && activeProfile && isUserProfile && activeProfile?.type === 'user') {
+      fetchOutgoingRequests();
+    }
+  }, [profileLoading, activeProfile, isUserProfile, fetchOutgoingRequests]);
 
   // Debounce search input
   useEffect(() => {
@@ -206,7 +311,136 @@ export default function FindPeople() {
     return '?';
   };
 
-  const handleUserClick = (item) => {
+  // Handle connection actions
+  const handleConnectionAction = async (action, userId, connectionId = null) => {
+    setConnectionLoading(prev => ({ ...prev, [userId]: true }));
+
+    try {
+      const requesterType = isUserProfile && activeProfile?.type === 'user' ? 'User' : 'Business';
+      const recipientType = 'User'; // FindPeople shows users, not businesses
+      const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+
+      let result;
+      switch (action) {
+        case 'send':
+          result = await sendConnectionRequest(userId, requesterType, recipientType, businessId);
+          showSuccess('Connection request sent');
+          break;
+        case 'accept':
+          result = await acceptConnectionRequest(connectionId);
+          showSuccess('Connection request accepted');
+          break;
+        case 'reject':
+          result = await rejectConnectionRequest(connectionId);
+          showSuccess('Connection request rejected');
+          break;
+        case 'follow':
+          result = await followUser(userId);
+          if (result.follow.status === 'accepted') {
+            showSuccess('Now following this user');
+          } else {
+            showSuccess('Follow request sent');
+          }
+          break;
+        case 'unfollow':
+          await unfollowUser(userId);
+          showSuccess('Unfollowed this user');
+          break;
+        case 'remove':
+          await removeConnection(connectionId);
+          showSuccess('Connection removed');
+          break;
+        case 'block':
+          await blockUser(userId);
+          showSuccess('User blocked');
+          break;
+        case 'unblock':
+          await unblockUser(userId);
+          showSuccess('User unblocked');
+          break;
+        default:
+          throw new Error('Invalid action');
+      }
+
+      // Update connection status
+      if (action === 'block' || action === 'remove') {
+        setConnectionStatuses(prev => ({
+          ...prev,
+          [userId]: { status: action === 'block' ? 'blocked' : 'none', connection: null, isBlocked: action === 'block' }
+        }));
+        if (action === 'block') {
+          setFollowStatuses(prev => ({
+            ...prev,
+            [userId]: { status: 'none', follow: null }
+          }));
+        }
+      } else if (action === 'unblock') {
+        setConnectionStatuses(prev => ({
+          ...prev,
+          [userId]: { status: 'none', connection: null, isBlocked: false }
+        }));
+      } else if (action === 'follow' || action === 'unfollow') {
+        // Update follow status
+        if (action === 'follow') {
+          setFollowStatuses(prev => ({
+            ...prev,
+            [userId]: { status: result?.follow?.status || 'pending', follow: result?.follow || null }
+          }));
+        } else {
+          setFollowStatuses(prev => ({
+            ...prev,
+            [userId]: { status: 'none', follow: null }
+          }));
+        }
+      } else {
+        const newStatus = action === 'send' ? 'pending_sent' : action === 'accept' ? 'accepted' : 'rejected';
+        setConnectionStatuses(prev => ({
+          ...prev,
+          [userId]: { status: newStatus, connection: result?.connection || null, isBlocked: false }
+        }));
+      }
+
+      // Refresh outgoing requests if we sent a request
+      if (action === 'send') {
+        fetchOutgoingRequests();
+      }
+
+      // Refresh connection statuses after actions
+      if (['accept', 'reject', 'remove', 'block', 'unblock'].includes(action) && results) {
+        fetchConnectionStatuses(results);
+      }
+    } catch (error) {
+      showError(error.message || 'Failed to perform connection action');
+    } finally {
+      setConnectionLoading(prev => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  // Handle canceling/removing an outgoing request
+  const handleCancelRequest = async (connectionId, userId) => {
+    setConnectionLoading(prev => ({ ...prev, [userId]: true }));
+    try {
+      await removeConnection(connectionId);
+      showSuccess('Connection request canceled');
+      setConnectionStatuses(prev => ({
+        ...prev,
+        [userId]: { status: 'none', connection: null, isBlocked: false }
+      }));
+      // Remove from outgoing requests list
+      setOutgoingRequests(prev => prev.filter(conn => conn._id !== connectionId));
+    } catch (error) {
+      showError(error.message || 'Failed to cancel request');
+    } finally {
+      setConnectionLoading(prev => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  const handleUserClick = (item, e) => {
+    // Don't navigate if clicking on connection buttons
+    if (e.target.closest('.connection-button')) {
+      return;
+    }
+    
     if (item.isBusiness) {
       // Navigate to business page
       const businessId = item.businessSlug || item.businessId || item.id;
@@ -217,12 +451,200 @@ export default function FindPeople() {
     }
   };
 
+  // Render connection button based on status
+  const renderConnectionButton = (item) => {
+    // Only show for users, not businesses
+    if (item.isBusiness || !isUserProfile || activeProfile?.type !== 'user') {
+      return null;
+    }
+
+    // Don't show for own profile
+    const userId = user?.id || user?._id;
+    if (item._id === userId || item.id === userId) {
+      return null;
+    }
+
+    const userIdKey = item._id || item.id;
+    const connectionInfo = connectionStatuses[userIdKey];
+    const followInfo = followStatuses[userIdKey];
+    const isLoading = connectionLoading[userIdKey];
+    const status = connectionInfo?.status || 'none';
+    const connection = connectionInfo?.connection;
+    const followStatus = followInfo?.status || 'none';
+    const isBlocked = connectionInfo?.isBlocked || false;
+
+    if (isLoading) {
+      return (
+        <button
+          className="connection-button px-3 py-1.5 text-sm bg-gray-100 text-gray-600 rounded-lg cursor-not-allowed flex items-center gap-1"
+          disabled
+        >
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+          <span>Loading...</span>
+        </button>
+      );
+    }
+
+    if (isBlocked) {
+      return (
+        <div className="connection-button flex items-center gap-2">
+          <span className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg">
+            Blocked
+          </span>
+          <ConnectionActionsMenu
+            connectionStatus={status}
+            followStatus={followStatus}
+            isFollowing={false}
+            connectionId={connection?._id}
+            userId={userIdKey}
+            onAction={handleConnectionAction}
+          />
+        </div>
+      );
+    }
+
+    switch (status) {
+      case 'accepted':
+        return (
+          <div className="connection-button flex items-center gap-2">
+            <button
+              className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1"
+              disabled
+            >
+              <MdCheck size={16} />
+              <span>Connected</span>
+            </button>
+            {followStatus === 'accepted' && (
+              <span className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg">
+                Following
+              </span>
+            )}
+            <ConnectionActionsMenu
+              connectionStatus={status}
+              followStatus={followStatus}
+              isFollowing={followStatus === 'accepted'}
+              connectionId={connection?._id}
+              userId={userIdKey}
+              onAction={handleConnectionAction}
+            />
+          </div>
+        );
+      case 'pending_sent':
+        return (
+          <button
+            className="connection-button px-3 py-1.5 text-sm bg-yellow-100 text-yellow-700 rounded-lg cursor-not-allowed flex items-center gap-1"
+            disabled
+          >
+            <MdHourglassEmpty size={16} />
+            <span>Pending</span>
+          </button>
+        );
+      case 'pending_received':
+        return (
+          <div className="connection-button flex gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleConnectionAction('accept', userIdKey, connection?._id);
+              }}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+            >
+              <MdCheck size={16} />
+              <span>Accept</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleConnectionAction('reject', userIdKey, connection?._id);
+              }}
+              className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-1"
+            >
+              <MdClose size={16} />
+              <span>Reject</span>
+            </button>
+          </div>
+        );
+      case 'rejected':
+      case 'none':
+      default:
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleConnectionAction('send', userIdKey);
+            }}
+            className="connection-button px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+          >
+            <MdPersonAdd size={16} />
+            <span>Connect</span>
+          </button>
+        );
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Find People</h1>
-        <p className="text-gray-600">Search for people and businesses on the platform</p>
+        <h1 className="text-3xl font-bold mb-2">Connections & Networking</h1>
+        <p className="text-gray-600">Search for people and businesses, and build your professional network</p>
       </div>
+
+      {/* Outgoing Connection Requests */}
+      {isUserProfile && activeProfile?.type === 'user' && outgoingRequests.length > 0 && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <MdHourglassEmpty size={24} />
+            Pending Connection Requests ({outgoingRequests.length})
+          </h2>
+          {loadingOutgoing ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {outgoingRequests.map((conn) => {
+                const otherUser = conn.otherUser;
+                return (
+                  <div
+                    key={conn._id}
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start gap-3">
+                      {getImageUrl(otherUser?.avatar) ? (
+                        <img
+                          src={getImageUrl(otherUser?.avatar)}
+                          alt={otherUser?.firstName || otherUser?.username}
+                          className="w-12 h-12 rounded-full object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold shrink-0">
+                          {getInitials(otherUser)}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-gray-900 truncate">
+                          {otherUser?.firstName && otherUser?.lastName
+                            ? `${otherUser.firstName} ${otherUser.lastName}`
+                            : otherUser?.username || 'Unknown User'}
+                        </h3>
+                        <p className="text-sm text-gray-500 truncate">@{otherUser?.username}</p>
+                        <button
+                          onClick={() => handleCancelRequest(conn._id, otherUser?._id || otherUser?.id)}
+                          disabled={connectionLoading[otherUser?._id || otherUser?.id]}
+                          className="mt-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-1"
+                        >
+                          <MdClose size={14} />
+                          Cancel Request
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -295,7 +717,7 @@ export default function FindPeople() {
                 {results.map((item) => (
                   <div
                     key={item.id || item.businessId}
-                    onClick={() => handleUserClick(item)}
+                    onClick={(e) => handleUserClick(item, e)}
                     className="bg-white shadow rounded-lg p-4 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200 hover:border-blue-500"
                   >
                     <div className="flex items-start gap-3">
@@ -346,6 +768,11 @@ export default function FindPeople() {
                             <span className="truncate">{item.locationString}</span>
                           </div>
                         )}
+
+                        {/* Connection Button */}
+                        <div className="mt-3">
+                          {renderConnectionButton(item)}
+                        </div>
                       </div>
                     </div>
                   </div>

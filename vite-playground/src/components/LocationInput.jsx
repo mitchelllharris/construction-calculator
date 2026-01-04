@@ -14,6 +14,7 @@ export default function LocationInput({
   showCurrentLocation = true,
   format = 'full', // 'full' for full address object, 'simple' for city/state/country, 'string' for string
   required = false,
+  disabled = false,
 }) {
   const [inputValue, setInputValue] = useState('');
   const [predictions, setPredictions] = useState([]);
@@ -201,6 +202,7 @@ export default function LocationInput({
   // Debounce function for autocomplete
   const debounceRef = useRef(null);
   const handleInputChange = (e) => {
+    if (disabled) return;
     const value = e.target.value;
     setInputValue(value);
 
@@ -235,6 +237,7 @@ export default function LocationInput({
 
   // Handle input focus - show autocomplete dropdown
   const handleInputFocus = () => {
+    if (disabled) return;
     if (inputValue.trim()) {
       getAutocompletePredictions(inputValue);
     }
@@ -341,7 +344,7 @@ export default function LocationInput({
   return (
     <div className="relative">
       <div className="relative">
-        <MdLocationOn className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" size={20} />
+        <MdLocationOn className={`absolute left-3 top-1/2 transform -translate-y-1/2 z-10 ${disabled ? 'text-gray-400' : 'text-gray-400'}`} size={20} />
         <input
           ref={inputRef}
           type="text"
@@ -349,9 +352,11 @@ export default function LocationInput({
           onChange={handleInputChange}
           onFocus={handleInputFocus}
           placeholder={placeholder}
-          className={`${className} pl-10`}
+          className={`${className} pl-10 ${disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed opacity-60' : ''}`}
           required={required}
           autoComplete="off"
+          disabled={disabled}
+          readOnly={disabled}
         />
       </div>
       {showPredictions && predictions.length > 0 && (
@@ -380,7 +385,7 @@ export default function LocationInput({
           })}
         </div>
       )}
-      {showCurrentLocation && isLoaded && (
+      {showCurrentLocation && isLoaded && !disabled && (
         <button
           type="button"
           onClick={handleUseCurrentLocation}

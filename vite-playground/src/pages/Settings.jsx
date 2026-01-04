@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { useFormValidation } from '../hooks/useFormValidation';
 import { post } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
@@ -13,33 +14,40 @@ import LocationInput from '../components/LocationInput';
 import Button from '../components/Button';
 import SkeletonCard from '../components/SkeletonCard';
 import Spinner from '../components/Spinner';
-import { get, del } from '../utils/api';
+import { get, del, put } from '../utils/api';
 import { MdBusiness, MdEdit, MdDelete, MdAdd } from 'react-icons/md';
 
 export default function Settings() {
   const navigate = useNavigate();
   const { user, updateProfile, changePassword, fetchUserProfile } = useAuth();
+  const { activeProfile, isUserProfile, isBusinessProfile, activeUserId } = useProfileSwitcher();
   const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
   const [businesses, setBusinesses] = useState([]);
   const [loadingBusinesses, setLoadingBusinesses] = useState(false);
+  const [currentBusiness, setCurrentBusiness] = useState(null);
+  const [loadingBusiness, setLoadingBusiness] = useState(false);
   const [emailPrivacy, setEmailPrivacy] = useState('private');
   const [privacySettings, setPrivacySettings] = useState({
     phone: 'private',
     website: 'private',
     bio: 'public',
     experience: 'public',
-    skills: 'public',
     certifications: 'public',
     portfolio: 'public',
-    serviceAreas: 'public',
-    licenseNumbers: 'public',
     location: 'public',
     socialMedia: 'public',
     trade: 'public',
     businessName: 'public',
-    yearsOfExperience: 'public',
+  });
+  const [connectionRequestSettings, setConnectionRequestSettings] = useState({
+    whoCanSend: 'everyone',
+    requireManualAcceptance: true,
+  });
+  const [followRequestSettings, setFollowRequestSettings] = useState({
+    whoCanSend: 'everyone',
+    requireManualAcceptance: true,
   });
   const [tradieData, setTradieData] = useState({
     trade: '',
@@ -48,10 +56,15 @@ export default function Settings() {
     phone: '',
     website: '',
     location: { city: '', state: '', country: '' },
-    yearsOfExperience: '',
-    skills: [],
-    serviceAreas: [],
-    licenseNumbers: [],
+  });
+  const [businessData, setBusinessData] = useState({
+    businessName: '',
+    description: '',
+    trade: '',
+    phone: '',
+    email: '',
+    website: '',
+    location: { city: '', state: '', country: '' },
   });
 
   // Profile form validation
@@ -83,9 +96,39 @@ export default function Settings() {
     }
   );
 
-  // Load user profile on mount
+  // Load business profile if active profile is a business
   useEffect(() => {
-    if (user) {
+    if (isBusinessProfile && activeProfile?.id) {
+      fetchBusinessProfile();
+    } else if (isBusinessProfile) {
+      // Reset business data if switching away from business profile
+      setCurrentBusiness(null);
+      setBusinessData({
+        businessName: '',
+        description: '',
+        trade: '',
+        phone: '',
+        email: '',
+        website: '',
+        location: { city: '', state: '', country: '' },
+      });
+    }
+  }, [isBusinessProfile, activeProfile?.id]);
+
+  // If we're on user profile but user is null, try to fetch it
+  useEffect(() => {
+    if (!isBusinessProfile && !user) {
+      fetchUserProfile();
+    }
+  }, [isBusinessProfile, user, fetchUserProfile]);
+
+  // Load user profile on mount and when profile type changes
+  useEffect(() => {
+    // If we're not on a business profile, treat as user profile
+    // This handles cases where activeProfile might not be set correctly
+    const shouldLoadUserProfile = !isBusinessProfile && user;
+    
+    if (shouldLoadUserProfile) {
       profileForm.setValue('username', user.username || '');
       profileForm.setValue('email', user.email || '');
       profileForm.setValue('firstName', user.firstName || '');
@@ -99,16 +142,119 @@ export default function Settings() {
         phone: user.phone || '',
         website: user.website || '',
         location: user.location || { city: '', state: '', country: '' },
-        yearsOfExperience: user.yearsOfExperience || '',
-        skills: user.skills || [],
-        serviceAreas: user.serviceAreas || [],
-        licenseNumbers: user.licenseNumbers || [],
       });
-    } else {
+
+      // Load privacy settings
+      if (user.emailPrivacy) {
+        setEmailPrivacy(user.emailPrivacy);
+      } else {
+        setEmailPrivacy('private');
+      }
+      if (user.privacySettings) {
+        setPrivacySettings(user.privacySettings);
+      } else {
+        setPrivacySettings({
+          phone: 'private',
+          website: 'private',
+          bio: 'public',
+          experience: 'public',
+          certifications: 'public',
+          portfolio: 'public',
+          location: 'public',
+          socialMedia: 'public',
+          trade: 'public',
+          businessName: 'public',
+        });
+      }
+
+      // Load connection and follow request settings
+      if (user.connectionRequestSettings) {
+        setConnectionRequestSettings({
+          whoCanSend: user.connectionRequestSettings.whoCanSend || 'everyone',
+          requireManualAcceptance: user.connectionRequestSettings.requireManualAcceptance !== false,
+        });
+      } else {
+        setConnectionRequestSettings({
+          whoCanSend: 'everyone',
+          requireManualAcceptance: true,
+        });
+      }
+      if (user.followRequestSettings) {
+        setFollowRequestSettings({
+          whoCanSend: user.followRequestSettings.whoCanSend || 'everyone',
+          requireManualAcceptance: user.followRequestSettings.requireManualAcceptance !== false,
+        });
+      } else {
+        setFollowRequestSettings({
+          whoCanSend: 'everyone',
+          requireManualAcceptance: true,
+        });
+      }
+    } else if (shouldLoadUserProfile && !user) {
       fetchUserProfile();
+    } else if (isBusinessProfile) {
+      // Reset user data if switching away from user profile
+      profileForm.reset();
+      setTradieData({
+        trade: '',
+        businessName: '',
+        bio: '',
+        phone: '',
+        website: '',
+        location: { city: '', state: '', country: '' },
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, isUserProfile, isBusinessProfile, activeProfile?.id]);
+
+  const fetchBusinessProfile = async () => {
+    if (!activeProfile?.id) return;
+    
+    setLoadingBusiness(true);
+    try {
+      const businessId = activeProfile.id;
+      const url = API_ENDPOINTS.BUSINESSES.GET_BY_ID(businessId);
+      const data = await get(url);
+      setCurrentBusiness(data);
+      
+      // Load business data
+      setBusinessData({
+        businessName: data.businessName || '',
+        description: data.description || '',
+        trade: data.trade || '',
+        phone: data.phone || '',
+        email: data.email || '',
+        website: data.website || '',
+        location: data.location || { city: '', state: '', country: '' },
+      });
+
+      // Load privacy settings
+      if (data.emailPrivacy) {
+        setEmailPrivacy(data.emailPrivacy);
+      }
+      if (data.privacySettings) {
+        setPrivacySettings(data.privacySettings);
+      }
+
+      // Load connection and follow request settings
+      if (data.connectionRequestSettings) {
+        setConnectionRequestSettings({
+          whoCanSend: data.connectionRequestSettings.whoCanSend || 'everyone',
+          requireManualAcceptance: data.connectionRequestSettings.requireManualAcceptance !== false,
+        });
+      }
+      if (data.followRequestSettings) {
+        setFollowRequestSettings({
+          whoCanSend: data.followRequestSettings.whoCanSend || 'everyone',
+          requireManualAcceptance: data.followRequestSettings.requireManualAcceptance !== false,
+        });
+      }
+    } catch (error) {
+      showError(error.message || 'Failed to load business profile');
+    } finally {
+      setLoadingBusiness(false);
+    }
+  };
 
   // Fetch businesses when businesses tab is active
   useEffect(() => {
@@ -249,6 +395,51 @@ export default function Settings() {
   };
 
   const handleProfileSubmit = profileForm.handleSubmit(async (values) => {
+    if (isBusinessProfile) {
+      // Handle business profile update
+      setLoading(true);
+      try {
+        const businessDataToUpdate = {
+          businessName: businessData.businessName || '',
+          description: businessData.description || '',
+          trade: businessData.trade || '',
+          phone: businessData.phone || '',
+          email: businessData.email || '',
+          website: businessData.website || '',
+          location: businessData.location || {},
+          emailPrivacy: emailPrivacy,
+          privacySettings: privacySettings,
+          connectionRequestSettings: connectionRequestSettings,
+          followRequestSettings: followRequestSettings,
+        };
+
+        // Add active account context headers for business update
+        const headers = {};
+        if (activeUserId) {
+          headers['x-active-account-id'] = activeUserId.toString();
+        }
+        if (activeProfile?.pageId) {
+          headers['x-active-page-id'] = activeProfile.pageId;
+        }
+        
+        const url = API_ENDPOINTS.BUSINESSES.UPDATE(activeProfile.id);
+        const response = await put(url, businessDataToUpdate, { headers });
+        
+        if (response.business) {
+          showSuccess('Business profile updated successfully');
+          await fetchBusinessProfile(); // Refresh business data
+        } else {
+          showError(response.message || 'Failed to update business profile');
+        }
+      } catch (error) {
+        showError(error.message || 'An unexpected error occurred');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Handle user profile update
     // Validate all fields before submission
     const errors = {};
     Object.keys(values).forEach((fieldName) => {
@@ -282,17 +473,18 @@ export default function Settings() {
         phone: tradieData.phone || null,
         website: tradieData.website || null,
         location: tradieData.location || {},
-        yearsOfExperience: tradieData.yearsOfExperience ? parseInt(tradieData.yearsOfExperience) : null,
-        skills: tradieData.skills || [],
-        serviceAreas: tradieData.serviceAreas || [],
-        licenseNumbers: tradieData.licenseNumbers || [],
         certifications: user?.certifications || [],
         portfolio: user?.portfolio || [],
         socialMedia: user?.socialMedia || {},
         emailPrivacy: emailPrivacy, // Include email privacy setting
       };
       
-      const result = await updateProfile(profileData);
+      // Pass active account context to updateProfile
+      const result = await updateProfile(
+        profileData, 
+        activeUserId || user?.accountId, 
+        activeProfile?.pageId || user?.pageId
+      );
       if (result.success) {
         showSuccess(result.message);
         // Refresh user data to get updated profile
@@ -348,7 +540,24 @@ export default function Settings() {
     }
   };
 
-  if (!user) {
+  // If no active profile is set, default to user profile
+  if (!activeProfile && user) {
+    // This shouldn't happen, but if it does, we'll show user settings
+    // The ProfileSwitcher should always have an activeProfile
+  }
+
+  // Show loading state while determining profile type or loading data
+  if (isBusinessProfile && loadingBusiness) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className="h-8 bg-gray-200 rounded w-48 mb-8 animate-pulse"></div>
+        <SkeletonCard lines={4} className="mb-6" />
+        <SkeletonCard lines={3} />
+      </div>
+    );
+  }
+  
+  if (!isBusinessProfile && !user) {
     return (
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="h-8 bg-gray-200 rounded w-48 mb-8 animate-pulse"></div>
@@ -358,9 +567,41 @@ export default function Settings() {
     );
   }
 
+  // If we're on a business profile but haven't loaded the business yet
+  if (isBusinessProfile && !currentBusiness && !loadingBusiness) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 className="text-3xl font-bold mb-8">Settings</h1>
+        <div className="bg-white shadow rounded-lg p-6">
+          <p className="text-gray-600">Business profile not found.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we don't have a user and we're not on a business profile, show error
+  if (!isBusinessProfile && !user) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 className="text-3xl font-bold mb-8">Settings</h1>
+        <div className="bg-white shadow rounded-lg p-6">
+          <p className="text-gray-600">Unable to load user profile. Please try refreshing the page.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-8">Settings</h1>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">Settings</h1>
+        {isBusinessProfile && activeProfile?.name && (
+          <p className="text-gray-600">Managing settings for: <span className="font-semibold">{activeProfile.name}</span></p>
+        )}
+        {!isBusinessProfile && user?.username && (
+          <p className="text-gray-600">Managing settings for: <span className="font-semibold">{user.username}</span></p>
+        )}
+      </div>
 
           {/* Tabs */}
           <div className="border-b border-gray-200 mb-6">
@@ -385,36 +626,42 @@ export default function Settings() {
               >
                 Privacy
               </button>
-              <button
-                onClick={() => setActiveTab('password')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'password'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Password
-              </button>
-              <button
-                onClick={() => setActiveTab('businesses')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'businesses'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Businesses
-              </button>
+              {isUserProfile && (
+                <button
+                  onClick={() => setActiveTab('password')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'password'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Password
+                </button>
+              )}
+              {!isBusinessProfile && (
+                <button
+                  onClick={() => setActiveTab('businesses')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'businesses'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Businesses
+                </button>
+              )}
             </nav>
           </div>
 
       {/* Profile Tab */}
       {activeTab === 'profile' && (
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Profile Information</h2>
+          <h2 className="text-xl font-semibold mb-4">
+            {isBusinessProfile ? 'Business Profile Information' : 'Profile Information'}
+          </h2>
 
-          {/* Email Verification Status */}
-          {!user.emailVerified && (
+          {/* Email Verification Status - Only for user profiles */}
+          {!isBusinessProfile && !user?.emailVerified && (
             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
               <div className="flex items-center justify-between">
                 <div>
@@ -435,129 +682,126 @@ export default function Settings() {
           )}
 
           <form onSubmit={handleProfileSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
-              <Input
-                type="text"
-                {...getProfileFieldProps('username')}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <Input
-                type="email"
-                {...getProfileFieldProps('email')}
-              />
-              {user.emailVerified && (
-                <p className="text-sm text-green-600 mt-1">✓ Email verified</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name
-                </label>
-                <Input
-                  type="text"
-                  {...getProfileFieldProps('firstName')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name
-                </label>
-                <Input
-                  type="text"
-                  {...getProfileFieldProps('lastName')}
-                />
-              </div>
-            </div>
-
-            {/* Tradie Profile Fields */}
-            <div className="pt-6 border-t border-gray-200 mt-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Professional Profile</h3>
-              <p className="text-gray-600 text-sm mb-6">
-                Build your professional profile to showcase your skills and experience to potential clients.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {!isBusinessProfile ? (
+              <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Trade / Specialty
+                    Username
                   </label>
                   <Input
                     type="text"
-                    value={tradieData.trade || ''}
-                    onChange={(e) => setTradieData({ ...tradieData, trade: e.target.value })}
-                    placeholder="e.g., Electrician, Plumber, Carpenter"
+                    {...getProfileFieldProps('username')}
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <Input
+                    type="email"
+                    {...getProfileFieldProps('email')}
+                  />
+                  {user?.emailVerified && (
+                    <p className="text-sm text-green-600 mt-1">✓ Email verified</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      First Name
+                    </label>
+                    <Input
+                      type="text"
+                      {...getProfileFieldProps('firstName')}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Last Name
+                    </label>
+                    <Input
+                      type="text"
+                      {...getProfileFieldProps('lastName')}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Business Name
                   </label>
                   <Input
                     type="text"
-                    value={tradieData.businessName || ''}
-                    onChange={(e) => setTradieData({ ...tradieData, businessName: e.target.value })}
+                    value={businessData.businessName || ''}
+                    onChange={(e) => setBusinessData({ ...businessData, businessName: e.target.value })}
                     placeholder="Your business name"
                   />
                 </div>
-              </div>
 
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bio / About
-                </label>
-                <textarea
-                  value={tradieData.bio || ''}
-                  onChange={(e) => setTradieData({ ...tradieData, bio: e.target.value })}
-                  rows={6}
-                  className="w-full border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-                  placeholder="Tell potential clients about yourself, your experience, and what makes you unique..."
-                  maxLength={2000}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {(tradieData.bio || '').length} / 2000 characters
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
+                    Email
                   </label>
+                  <Input
+                    type="email"
+                    value={businessData.email || ''}
+                    onChange={(e) => setBusinessData({ ...businessData, email: e.target.value })}
+                    placeholder="business@example.com"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone
+                </label>
+                {!isBusinessProfile ? (
                   <PhoneInput
                     value={tradieData.phone || ''}
                     onChange={(e) => setTradieData({ ...tradieData, phone: e.target.value })}
                     placeholder="4XX XXX XXX"
                   />
-                </div>
+                ) : (
+                  <PhoneInput
+                    value={businessData.phone || ''}
+                    onChange={(e) => setBusinessData({ ...businessData, phone: e.target.value })}
+                    placeholder="4XX XXX XXX"
+                  />
+                )}
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Website
-                  </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Website
+                </label>
+                {!isBusinessProfile ? (
                   <WebsiteInput
                     value={tradieData.website || ''}
                     onChange={(e) => setTradieData({ ...tradieData, website: e.target.value })}
                     placeholder="yourwebsite.com"
                   />
-                </div>
+                ) : (
+                  <WebsiteInput
+                    value={businessData.website || ''}
+                    onChange={(e) => setBusinessData({ ...businessData, website: e.target.value })}
+                    placeholder="yourwebsite.com"
+                  />
+                )}
               </div>
+            </div>
 
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location
-                </label>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Location
+              </label>
+              {!isBusinessProfile ? (
                 <LocationInput
                   value={tradieData.location}
                   onChange={(location) => setTradieData({ ...tradieData, location })}
@@ -565,54 +809,15 @@ export default function Settings() {
                   format="simple"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Years of Experience
-                </label>
-                <Input
-                  type="number"
-                  value={tradieData.yearsOfExperience || ''}
-                  onChange={(e) => setTradieData({ ...tradieData, yearsOfExperience: e.target.value })}
-                  min="0"
-                  max="100"
-                  placeholder="0"
+              ) : (
+                <LocationInput
+                  value={businessData.location}
+                  onChange={(location) => setBusinessData({ ...businessData, location })}
+                  placeholder="Search for your location..."
+                  format="simple"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Skills
-                </label>
-                <TagInput
-                  tags={tradieData.skills || []}
-                  onChange={(newSkills) => setTradieData({ ...tradieData, skills: newSkills })}
-                  placeholder="Type a skill and press Enter (e.g., Electrical Installation)"
-                />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Service Areas
-                </label>
-                <TagInput
-                  tags={tradieData.serviceAreas || []}
-                  onChange={(newAreas) => setTradieData({ ...tradieData, serviceAreas: newAreas })}
-                  placeholder="Type a service area and press Enter (e.g., Sydney)"
-                />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  License Numbers
-                </label>
-                <TagInput
-                  tags={tradieData.licenseNumbers || []}
-                  onChange={(newLicenses) => setTradieData({ ...tradieData, licenseNumbers: newLicenses })}
-                  placeholder="Type a license number and press Enter"
-                />
-              </div>
+              )}
             </div>
 
             <div className="pt-4">
@@ -740,19 +945,6 @@ export default function Settings() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Years of Experience</label>
-                  <select
-                    value={privacySettings.yearsOfExperience}
-                    onChange={(e) => setPrivacySettings({ ...privacySettings, yearsOfExperience: e.target.value })}
-                    className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
-                  >
-                    <option value="public">Everyone</option>
-                    <option value="contacts_of_contacts">Contacts of Contacts</option>
-                    <option value="contacts_only">Only Contacts</option>
-                    <option value="private">Private</option>
-                  </select>
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">About / Bio</label>
                   <select
                     value={privacySettings.bio}
@@ -777,19 +969,6 @@ export default function Settings() {
                   <select
                     value={privacySettings.experience}
                     onChange={(e) => setPrivacySettings({ ...privacySettings, experience: e.target.value })}
-                    className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
-                  >
-                    <option value="public">Everyone</option>
-                    <option value="contacts_of_contacts">Contacts of Contacts</option>
-                    <option value="contacts_only">Only Contacts</option>
-                    <option value="private">Private</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
-                  <select
-                    value={privacySettings.skills}
-                    onChange={(e) => setPrivacySettings({ ...privacySettings, skills: e.target.value })}
                     className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
                   >
                     <option value="public">Everyone</option>
@@ -827,53 +1006,127 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Service Areas & Licenses */}
+            {/* Connection & Follow Requests */}
             <div className="border-t border-gray-200 pt-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Service Areas & Licenses</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Service Areas</label>
-                  <select
-                    value={privacySettings.serviceAreas}
-                    onChange={(e) => setPrivacySettings({ ...privacySettings, serviceAreas: e.target.value })}
-                    className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
-                  >
-                    <option value="public">Everyone</option>
-                    <option value="contacts_of_contacts">Contacts of Contacts</option>
-                    <option value="contacts_only">Only Contacts</option>
-                    <option value="private">Private</option>
-                  </select>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Connection & Follow Requests</h3>
+              
+              {/* Connection Requests */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-semibold text-gray-800 mb-3">Connection Requests</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Who can send connection requests?</label>
+                    <select
+                      value={connectionRequestSettings.whoCanSend}
+                      onChange={(e) => setConnectionRequestSettings({ ...connectionRequestSettings, whoCanSend: e.target.value })}
+                      className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
+                    >
+                      <option value="everyone">Everyone can send a connection request</option>
+                      <option value="connections_of_connections">Connections of connections can send</option>
+                      <option value="no_one">No one can send a request</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Require manual acceptance</label>
+                      <p className="text-xs text-gray-500">Connection requests must be accepted manually before connecting</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={connectionRequestSettings.requireManualAcceptance}
+                        onChange={(e) => setConnectionRequestSettings({ ...connectionRequestSettings, requireManualAcceptance: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">License Numbers</label>
-                  <select
-                    value={privacySettings.licenseNumbers}
-                    onChange={(e) => setPrivacySettings({ ...privacySettings, licenseNumbers: e.target.value })}
-                    className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
-                  >
-                    <option value="public">Everyone</option>
-                    <option value="contacts_of_contacts">Contacts of Contacts</option>
-                    <option value="contacts_only">Only Contacts</option>
-                    <option value="private">Private</option>
-                  </select>
+              </div>
+
+              {/* Follow Requests */}
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-semibold text-gray-800 mb-3">Follow Requests</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Who can send follow requests?</label>
+                    <select
+                      value={followRequestSettings.whoCanSend}
+                      onChange={(e) => setFollowRequestSettings({ ...followRequestSettings, whoCanSend: e.target.value })}
+                      className="w-full border border-gray-200 rounded-sm px-3 py-2 focus:outline-none focus:border-blue-500 transition-colors"
+                    >
+                      <option value="everyone">Everyone can send a follow request</option>
+                      <option value="connections_of_connections">Connections of connections can send</option>
+                      <option value="no_one">No one can send a request</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Require manual acceptance</label>
+                      <p className="text-xs text-gray-500">Follow requests must be accepted manually before following</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={followRequestSettings.requireManualAcceptance}
+                        onChange={(e) => setFollowRequestSettings({ ...followRequestSettings, requireManualAcceptance: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
+
 
             <div className="pt-4 border-t border-gray-200">
               <Button
                 onClick={async () => {
                   setLoading(true);
                   try {
-                    const result = await updateProfile({ 
-                      emailPrivacy,
-                      privacySettings 
-                    });
-                    if (result.success) {
-                      showSuccess('Privacy settings updated successfully');
-                      await fetchUserProfile(); // Refresh user data
+                    if (isBusinessProfile) {
+                      // Add active account context headers for business update
+                      const headers = {};
+                      if (activeUserId) {
+                        headers['x-active-account-id'] = activeUserId.toString();
+                      }
+                      if (activeProfile?.pageId) {
+                        headers['x-active-page-id'] = activeProfile.pageId;
+                      }
+                      
+                      const url = API_ENDPOINTS.BUSINESSES.UPDATE(activeProfile.id);
+                      const response = await put(url, {
+                        emailPrivacy,
+                        privacySettings,
+                        connectionRequestSettings,
+                        followRequestSettings
+                      }, { headers });
+                      
+                      if (response.business) {
+                        showSuccess('Privacy settings updated successfully');
+                        await fetchBusinessProfile(); // Refresh business data
+                      } else {
+                        showError(response.message || 'Failed to update privacy settings');
+                      }
                     } else {
-                      showError(result.message);
+                      // Pass active account context to updateProfile
+                      const result = await updateProfile(
+                        { 
+                          emailPrivacy,
+                          privacySettings,
+                          connectionRequestSettings,
+                          followRequestSettings
+                        },
+                        activeUserId || user?.accountId,
+                        activeProfile?.pageId || user?.pageId
+                      );
+                      if (result.success) {
+                        showSuccess('Privacy settings updated successfully');
+                        await fetchUserProfile(); // Refresh user data
+                      } else {
+                        showError(result.message);
+                      }
                     }
                   } catch (error) {
                     showError(error.message || 'Failed to update privacy settings');

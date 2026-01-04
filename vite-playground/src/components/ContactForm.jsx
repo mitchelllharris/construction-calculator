@@ -8,6 +8,7 @@ import { uploadAvatar } from '../utils/contactApi';
 
 export default function ContactForm({ contact, onSubmit, onCancel, loading = false }) {
   const isEditMode = !!contact;
+  const isPlatformUser = contact?.isPlatformUser || false;
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -170,17 +171,18 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
     }
 
     // Clean up the data - remove empty optional fields
+    // For platform users, preserve original values for synced fields
     let cleanedData = {
-      firstName: values.firstName.trim(),
-      lastName: values.lastName.trim(),
-      email: values.email.trim().toLowerCase(),
-      phone: values.phone?.trim() || undefined,
+      firstName: isPlatformUser ? contact.firstName : values.firstName.trim(),
+      lastName: isPlatformUser ? contact.lastName : values.lastName.trim(),
+      email: isPlatformUser ? contact.email : values.email.trim().toLowerCase(),
+      phone: isPlatformUser ? contact.phone : (values.phone?.trim() || undefined),
       type: values.type || 'client',
-      address: values.address?.trim() || undefined,
-      city: values.city?.trim() || undefined,
-      state: values.state?.trim() || undefined,
-      zip: values.zip?.trim() || undefined,
-      country: values.country?.trim() || undefined,
+      address: isPlatformUser ? contact.address : (values.address?.trim() || undefined),
+      city: isPlatformUser ? contact.city : (values.city?.trim() || undefined),
+      state: isPlatformUser ? contact.state : (values.state?.trim() || undefined),
+      zip: isPlatformUser ? contact.zip : (values.zip?.trim() || undefined),
+      country: isPlatformUser ? contact.country : (values.country?.trim() || undefined),
       notes: values.notes?.trim() || undefined,
       tags: (typeof values.tags === 'string' && values.tags.trim()) 
         ? values.tags.split(',').map(t => t.trim()).filter(Boolean)
@@ -268,6 +270,13 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
         </div>
       )}
 
+      {isPlatformUser && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+          <p className="text-sm text-green-800">
+            <strong>Platform User:</strong> Name, email, phone, and address fields are synced from their profile and cannot be edited.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -278,6 +287,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
             placeholder="John"
             icon={MdPerson}
             error={touched.firstName ? getFieldProps('firstName').error : null}
+            disabled={isPlatformUser}
+            title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
           />
         </div>
 
@@ -290,6 +301,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
             placeholder="Doe"
             icon={MdPerson}
             error={touched.lastName ? getFieldProps('lastName').error : null}
+            disabled={isPlatformUser}
+            title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
           />
         </div>
       </div>
@@ -304,6 +317,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
           placeholder="john.doe@example.com"
           icon={MdEmail}
           error={touched.email ? getFieldProps('email').error : null}
+          disabled={isPlatformUser}
+          title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
         />
       </div>
 
@@ -318,6 +333,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
             placeholder="+1 (555) 123-4567"
             icon={MdPhone}
             error={touched.phone ? getFieldProps('phone').error : null}
+            disabled={isPlatformUser}
+            title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
           />
         </div>
 
@@ -352,6 +369,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
           placeholder="123 Main Street"
           icon={MdLocationOn}
           error={touched.address ? getFieldProps('address').error : null}
+          disabled={isPlatformUser}
+          title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
         />
       </div>
 
@@ -366,19 +385,22 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
             country: formData.country || '',
           } : null}
           onChange={(location) => {
-            if (location) {
-              setValue('city', location.city || '');
-              setValue('state', location.state || '');
-              setValue('country', location.country || '');
-            } else {
-              setValue('city', '');
-              setValue('state', '');
-              setValue('country', '');
+            if (!isPlatformUser) {
+              if (location) {
+                setValue('city', location.city || '');
+                setValue('state', location.state || '');
+                setValue('country', location.country || '');
+              } else {
+                setValue('city', '');
+                setValue('state', '');
+                setValue('country', '');
+              }
             }
           }}
           placeholder="Search for city, state, country..."
           format="simple"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isPlatformUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+          disabled={isPlatformUser}
         />
       </div>
 
@@ -390,6 +412,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
           {...getFieldPropsWithValidation('zip')}
           placeholder="10001"
           error={touched.zip ? getFieldProps('zip').error : null}
+          disabled={isPlatformUser}
+          title={isPlatformUser ? "This field is synced from the platform user's profile" : undefined}
         />
       </div>
 

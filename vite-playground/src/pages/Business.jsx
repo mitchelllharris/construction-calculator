@@ -2,8 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { get } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
+import { getConnectionStatus, blockUser, unblockUser } from '../utils/connectionApi';
+import { getFollowStatus, followUser, unfollowUser } from '../utils/followApi';
+import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
 import LoadingPage from '../components/LoadingPage';
 import EditableSection from '../components/EditableSection';
 import PostForm from '../components/profile/PostForm';
@@ -21,7 +25,8 @@ export default function Business() {
   const { slug, id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
+  const { activeProfile, isUserProfile, isBusinessProfile } = useProfileSwitcher();
   
   const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,14 +34,31 @@ export default function Business() {
   const [posts, setPosts] = useState([]);
   const [showPhotoGalleryModal, setShowPhotoGalleryModal] = useState(false);
   const [photoGalleryIndex, setPhotoGalleryIndex] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [followStatus, setFollowStatus] = useState(null);
 
-  // Calculate isOwner
+  // Calculate isOwner - only true if active profile is a business profile and matches
   const ownerId = business?.ownerId?._id?.toString() || business?.ownerId?.id?.toString() || business?.ownerId?.toString();
-  const isOwner = currentUser && business && ownerId === currentUser.id?.toString();
+  const isOwner = currentUser && business && 
+    isBusinessProfile && activeProfile?.type === 'business' &&
+    ownerId === currentUser.id?.toString() &&
+    String(business._id) === String(activeProfile?.id);
 
   useEffect(() => {
     fetchBusiness();
   }, [slug, id]);
+
+  useEffect(() => {
+    if (business?.ownerId && !isOwner && isUserProfile && activeProfile?.type === 'user') {
+      fetchConnectionStatus();
+      fetchFollowStatus();
+    } else if (isOwner || !isUserProfile || activeProfile?.type !== 'user') {
+      setConnectionStatus(null);
+      setFollowStatus(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.ownerId, isOwner, isUserProfile, activeProfile?.type]);
 
   // Refresh when page becomes visible (user returns from edit page)
   useEffect(() => {
@@ -87,6 +109,81 @@ export default function Business() {
     } catch (error) {
       console.error('Failed to fetch posts for gallery:', error);
       setPosts([]);
+    }
+  };
+
+  const fetchConnectionStatus = async () => {
+    if (!business?.ownerId) {
+      setConnectionStatus(null);
+      return;
+    }
+    const ownerId = business.ownerId._id || business.ownerId.id || business.ownerId;
+    try {
+      const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+      const recipientType = 'User'; // Business owner is always a user
+      const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+      const statusData = await getConnectionStatus(ownerId, requesterType, recipientType, businessId);
+      setConnectionStatus(statusData);
+      if (statusData.isBlocked) {
+        setIsBlocked(true);
+      }
+    } catch (err) {
+      setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+    }
+  };
+
+  const fetchFollowStatus = async () => {
+    if (!business?.ownerId) {
+      setFollowStatus(null);
+      return;
+    }
+    const ownerId = business.ownerId._id || business.ownerId.id || business.ownerId;
+    try {
+      const statusData = await getFollowStatus(ownerId);
+      setFollowStatus(statusData);
+    } catch (err) {
+      setFollowStatus({ status: 'none', follow: null });
+    }
+  };
+
+  const handleConnectionAction = async (action, connectionId, userId) => {
+    if (!isUserProfile || activeProfile?.type !== 'user') {
+      showError('You must be logged in as a user to manage connections');
+      return;
+    }
+
+    try {
+      switch (action) {
+        case 'follow':
+          const followResult = await followUser(userId);
+          if (followResult.follow.status === 'accepted') {
+            showSuccess('Now following this business');
+          } else {
+            showSuccess('Follow request sent');
+          }
+          await fetchFollowStatus();
+          break;
+        case 'unfollow':
+          await unfollowUser(userId);
+          showSuccess('Unfollowed this business');
+          await fetchFollowStatus();
+          break;
+        case 'block':
+          await blockUser(userId);
+          showSuccess('Business blocked');
+          setIsBlocked(true);
+          break;
+        case 'unblock':
+          await unblockUser(userId);
+          showSuccess('Business unblocked');
+          setIsBlocked(false);
+          break;
+        default:
+          throw new Error('Invalid action');
+      }
+      await fetchConnectionStatus();
+    } catch (err) {
+      showError(err.message || 'Failed to perform action');
     }
   };
 
@@ -290,7 +387,7 @@ export default function Business() {
                       </a>
                     )}
                   </div>
-                  {isOwner && (
+                  {isOwner ? (
                     <Button
                       onClick={() => {
                         const businessId = business.businessSlug || business._id;
@@ -301,7 +398,16 @@ export default function Business() {
                       <MdEdit size={18} />
                       Edit Business
                     </Button>
-                  )}
+                  ) : isUserProfile && activeProfile?.type === 'user' && business?.ownerId && !isBlocked ? (
+                    <ConnectionActionsMenu
+                      connectionStatus={connectionStatus?.status || 'none'}
+                      followStatus={followStatus?.status || 'none'}
+                      isFollowing={followStatus?.status === 'accepted'}
+                      connectionId={connectionStatus?.connection?._id}
+                      userId={business.ownerId._id || business.ownerId.id || business.ownerId}
+                      onAction={handleConnectionAction}
+                    />
+                  ) : null}
                 </div>
 
                 {/* Contact Info */}

@@ -153,14 +153,23 @@ exports.searchUsers = async (req, res) => {
 
         // Get users with filters
         logger.info("Search users query:", JSON.stringify(query));
-        const users = await User.find(query)
+        let users = await User.find(query)
             .select("-password -verificationToken -resetPasswordToken -loginAttempts -lockUntil -tokenVersion -email")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
 
-        // Get total count for pagination
-        const total = await User.countDocuments(query);
+        // Filter out blocked users if user is logged in
+        if (req.userId) {
+            const currentUser = await User.findById(req.userId).select('blockedUsers');
+            if (currentUser && currentUser.blockedUsers && currentUser.blockedUsers.length > 0) {
+                const blockedIds = currentUser.blockedUsers.map(id => id.toString());
+                users = users.filter(user => !blockedIds.includes(user._id.toString()));
+            }
+        }
+
+        // Get total count for pagination (after filtering blocked users)
+        const total = users.length;
 
         // Format users for response
         const formattedUsers = users.map(user => {

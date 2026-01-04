@@ -154,10 +154,20 @@ export const AuthProvider = ({ children }) => {
   /**
    * Update user profile
    */
-  const updateProfile = async (profileData) => {
+  const updateProfile = async (profileData, activeAccountId = null, activePageId = null) => {
     try {
       setLoading(true);
-      const response = await put(API_ENDPOINTS.USER.UPDATE_PROFILE, profileData);
+      
+      // Add active account context headers if provided
+      const headers = {};
+      if (activeAccountId) {
+        headers['x-active-account-id'] = activeAccountId.toString();
+      }
+      if (activePageId) {
+        headers['x-active-page-id'] = activePageId;
+      }
+      
+      const response = await put(API_ENDPOINTS.USER.UPDATE_PROFILE, profileData, { headers });
       
       if (response.user) {
         setUser(response.user);

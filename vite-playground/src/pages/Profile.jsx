@@ -5,6 +5,9 @@ import { useToast } from '../contexts/ToastContext';
 import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { get } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
+import { getConnectionStatus, sendConnectionRequest, followConnection, unfollowConnection, removeConnection, blockUser, unblockUser } from '../utils/connectionApi';
+import { getFollowStatus, followUser, unfollowUser } from '../utils/followApi';
+import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
 import LoadingPage from '../components/LoadingPage';
 import EditableSection from '../components/EditableSection';
 import BioEditModal from '../components/profile/BioEditModal';
@@ -52,21 +55,34 @@ export default function Profile() {
   const [photoGalleryIndex, setPhotoGalleryIndex] = useState(0);
   const [postsRefreshKey, setPostsRefreshKey] = useState(0);
   const [posts, setPosts] = useState([]);
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [followStatus, setFollowStatus] = useState(null);
 
   let isOwnProfile = false;
-  if (profile && activeProfile) {
-    if (isBusinessProfile && activeProfile?.type === 'business') {
-      isOwnProfile = String(profile?.id) === String(activeProfile?.id);
-    } else if (isUserProfile && activeProfile?.type === 'user') {
-      isOwnProfile = String(profile?.id) === String(activeProfile?.id) || profile?.username === activeProfile?.name;
-    }
+  // Profile page is for user profiles only, so only check if active profile is a user profile
+  if (profile && activeProfile && isUserProfile && activeProfile?.type === 'user') {
+    isOwnProfile = String(profile?.id) === String(activeProfile?.id) || profile?.username === activeProfile?.name;
   } else if (profile && currentUser && !activeProfile) {
+    // Fallback: if no active profile, check against current user
     isOwnProfile = currentUser.id === profile?.id || currentUser.username === profile?.username;
   }
 
   useEffect(() => {
     fetchProfile();
   }, [username, id]);
+
+  useEffect(() => {
+    if (profile && !isOwnProfile && profile.id && isUserProfile && activeProfile?.type === 'user') {
+      fetchConnectionStatus();
+      fetchFollowStatus();
+    } else if (isOwnProfile || !isUserProfile || activeProfile?.type !== 'user') {
+      setConnectionStatus(null);
+      setFollowStatus(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, isOwnProfile, isUserProfile, activeProfile?.type]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -105,11 +121,109 @@ export default function Profile() {
 
       const profileData = await get(url);
       setProfile(profileData);
-    } catch (error) {
-      showError(error.message || 'Failed to load profile');
-      navigate('/');
+    } catch (err) {
+      if (err.status === 403 && (err.message?.includes('blocked') || err.message?.includes('You are blocked'))) {
+        setIsBlocked(true);
+        setProfile(null);
+      } else {
+        showError(err.message || 'Failed to load profile');
+        navigate('/');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConnectionStatus = async () => {
+    if (!profile?.id || isOwnProfile) {
+      setConnectionStatus(null);
+      return;
+    }
+    try {
+      const statusData = await getConnectionStatus(profile.id);
+      setConnectionStatus(statusData);
+      if (statusData.isBlocked) {
+        setIsBlocked(true);
+      }
+    } catch (err) {
+      // User might not be connected, that's okay - set default status
+      setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+    }
+  };
+
+  const fetchFollowStatus = async () => {
+    if (!profile?.id || isOwnProfile) {
+      setFollowStatus(null);
+      return;
+    }
+    try {
+      const statusData = await getFollowStatus(profile.id);
+      setFollowStatus(statusData);
+    } catch (err) {
+      // User might not be following, that's okay - set default status
+      setFollowStatus({ status: 'none', follow: null });
+    }
+  };
+
+  const handleConnectionAction = async (action, connectionId, userId) => {
+    if (!isUserProfile || activeProfile?.type !== 'user') {
+      showError('You must be logged in as a user to manage connections');
+      return;
+    }
+
+    setConnectionLoading(true);
+    try {
+      let result;
+      switch (action) {
+        case 'send':
+          const requesterType = isUserProfile && activeProfile?.type === 'user' ? 'User' : 'Business';
+          const recipientType = 'User'; // Profile page is always for users
+          const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+          result = await sendConnectionRequest(userId, requesterType, recipientType, businessId);
+          showSuccess('Connection request sent');
+          // Refresh connection status
+          await fetchConnectionStatus();
+          break;
+        case 'follow':
+          // Use the separate follow system (not connection-based)
+          result = await followUser(userId);
+          if (result.follow.status === 'accepted') {
+            showSuccess('Now following this user');
+          } else {
+            showSuccess('Follow request sent');
+          }
+          await fetchFollowStatus();
+          break;
+        case 'unfollow':
+          // Use the separate follow system (not connection-based)
+          await unfollowUser(userId);
+          showSuccess('Unfollowed this user');
+          await fetchFollowStatus();
+          break;
+        case 'remove':
+          await removeConnection(connectionId);
+          showSuccess('Connection removed');
+          break;
+        case 'block':
+          await blockUser(userId);
+          showSuccess('User blocked');
+          setIsBlocked(true);
+          break;
+        case 'unblock':
+          await unblockUser(userId);
+          showSuccess('User unblocked');
+          setIsBlocked(false);
+          break;
+        default:
+          throw new Error('Invalid action');
+      }
+
+      // Refresh connection status
+      await fetchConnectionStatus();
+    } catch (error) {
+      showError(error.message || 'Failed to perform connection action');
+    } finally {
+      setConnectionLoading(false);
     }
   };
 
@@ -379,6 +493,20 @@ export default function Profile() {
     return null;
   }
 
+  if (isBlocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="container mx-auto px-4 py-8 max-w-6xl">
+          <div className="bg-white shadow-lg rounded-lg p-12 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">You are blocked</h2>
+            <p className="text-gray-600 mb-6">You cannot view this profile because you have been blocked by this user.</p>
+            <Button onClick={() => navigate(-1)}>Go Back</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const avatarUrl = profile.avatar 
     ? (profile.avatar.startsWith('http') ? profile.avatar : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${profile.avatar}`)
     : null;
@@ -596,7 +724,7 @@ export default function Profile() {
                       </a>
                     )}
                   </div>
-                  {isOwnProfile && (
+                  {isOwnProfile ? (
                     <Button
                       onClick={() => navigate('/settings')}
                       className="flex items-center gap-2"
@@ -604,7 +732,48 @@ export default function Profile() {
                       <MdEdit size={18} />
                       Edit Profile
                     </Button>
-                  )}
+                  ) : isUserProfile && activeProfile?.type === 'user' && !isOwnProfile && !isBlocked ? (
+                    <div className="flex items-center gap-2">
+                      {connectionStatus?.status === 'none' && (
+                        <Button
+                          onClick={() => handleConnectionAction('send', profile.id)}
+                          disabled={connectionLoading}
+                          className="flex items-center gap-2"
+                        >
+                          Connect
+                        </Button>
+                      )}
+                      {connectionStatus?.status === 'accepted' && (
+                        <span className="px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded-lg">
+                          Connected
+                        </span>
+                      )}
+                      {followStatus?.status === 'accepted' && (
+                        <span className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg">
+                          Following
+                        </span>
+                      )}
+                      {followStatus?.status === 'pending' && (
+                        <span className="px-3 py-1.5 text-sm bg-yellow-100 text-yellow-700 rounded-lg">
+                          Follow Request Sent
+                        </span>
+                      )}
+                      {connectionStatus && followStatus ? (
+                        <ConnectionActionsMenu
+                          connectionStatus={connectionStatus.status || 'none'}
+                          followStatus={followStatus.status || 'none'}
+                          isFollowing={followStatus.status === 'accepted'}
+                          connectionId={connectionStatus.connection?._id}
+                          userId={profile.id}
+                          onAction={handleConnectionAction}
+                        />
+                      ) : (
+                        <div className="p-2 text-gray-400">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-400"></div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Contact Info */}
