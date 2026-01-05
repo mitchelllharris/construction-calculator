@@ -5,17 +5,18 @@ import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { createContact, updateContact, bulkDeleteContacts, exportContacts } from '../utils/contactApi';
 import { getPendingRequests, acceptConnectionRequest, rejectConnectionRequest, blockUser } from '../utils/connectionApi';
 import { getPendingFollowRequests, acceptFollowRequest, rejectFollowRequest } from '../utils/followApi';
+import { getAllContactLists, createContactList, deleteContactList } from '../utils/contactListApi';
 import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
 import ContactList from '../components/ContactList';
 import ContactForm from '../components/ContactForm';
 import BulkActionsBar from '../components/BulkActionsBar';
 import ContactImportModal from '../components/ContactImportModal';
 import Button from '../components/Button';
-import { MdAdd, MdClose, MdFileDownload, MdFileUpload, MdPersonAdd, MdCheck } from 'react-icons/md';
+import { MdAdd, MdClose, MdFileDownload, MdFileUpload, MdPersonAdd, MdCheck, MdList, MdDelete, MdEdit } from 'react-icons/md';
 
 export default function Contacts() {
   const { showSuccess, showError } = useToast();
-  const { activeProfile, isUserProfile, loading: profileLoading } = useProfileSwitcher();
+  const { activeProfile, isUserProfile, isBusinessProfile, loading: profileLoading } = useProfileSwitcher();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -26,8 +27,39 @@ export default function Contacts() {
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [loadingIncoming, setLoadingIncoming] = useState(false);
+  const [pendingFollowRequests, setPendingFollowRequests] = useState([]);
+  const [loadingFollowRequests, setLoadingFollowRequests] = useState(false);
   const [connectionLoading, setConnectionLoading] = useState({});
   const formRef = useRef(null);
+  
+  // Tab state: 'all' (for personal users), 'business', 'personal' (for business profiles), or list ID (for custom lists)
+  const [activeTab, setActiveTab] = useState(() => {
+    // Initialize based on profile type, default to 'all' for personal users
+    return isBusinessProfile ? 'business' : 'all';
+  });
+  
+  // Update active tab when profile changes
+  useEffect(() => {
+    if (isBusinessProfile) {
+      setActiveTab('business');
+    } else if (isUserProfile) {
+      setActiveTab('all');
+    }
+  }, [isBusinessProfile, isUserProfile]);
+  
+  // Get current businessId for business contacts tab
+  const currentBusinessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+  
+  // Contact lists state
+  const [contactLists, setContactLists] = useState([]);
+  const [loadingLists, setLoadingLists] = useState(false);
+  const [showListForm, setShowListForm] = useState(false);
+  const [listFormData, setListFormData] = useState({
+    name: '',
+    description: '',
+    type: 'manual',
+    filterCriteria: {}
+  });
 
   // Check for edit query param on mount
   useEffect(() => {
@@ -84,8 +116,12 @@ export default function Contacts() {
         result = await updateContact(editingContact._id, contactData);
         showSuccess('Contact updated successfully');
       } else {
-        // Create new contact
-        result = await createContact(contactData);
+        // Create new contact - include businessId if on business profile and in business tab
+        const contactDataWithBusiness = {
+          ...contactData,
+          ...(isBusinessProfile && activeTab === 'business' && currentBusinessId ? { businessId: currentBusinessId } : {})
+        };
+        result = await createContact(contactDataWithBusiness);
         showSuccess('Contact created successfully');
       }
       setShowForm(false);
@@ -203,6 +239,59 @@ export default function Contacts() {
     }
   }, [isUserProfile, activeProfile, showError]);
 
+  // Fetch contact lists
+  const fetchContactLists = useCallback(async () => {
+    setLoadingLists(true);
+    try {
+      const data = await getAllContactLists(currentBusinessId);
+      setContactLists(data.lists || []);
+    } catch (error) {
+      showError(error.message || 'Failed to load contact lists');
+    } finally {
+      setLoadingLists(false);
+    }
+  }, [currentBusinessId, showError]);
+
+  // Create contact list
+  const handleCreateList = async () => {
+    setLoading(true);
+    try {
+      const listData = {
+        ...listFormData,
+        businessId: isBusinessProfile && activeTab === 'business' ? currentBusinessId : null
+      };
+      await createContactList(listData);
+      showSuccess('Contact list created successfully');
+      setShowListForm(false);
+      setListFormData({ name: '', description: '', type: 'manual', filterCriteria: {} });
+      await fetchContactLists();
+    } catch (error) {
+      showError(error.message || 'Failed to create contact list');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete contact list
+  const handleDeleteList = async (listId) => {
+    if (!window.confirm('Are you sure you want to delete this contact list?')) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await deleteContactList(listId);
+      showSuccess('Contact list deleted successfully');
+      if (activeTab === listId) {
+        setActiveTab(isBusinessProfile ? 'business' : 'all');
+      }
+      await fetchContactLists();
+    } catch (error) {
+      showError(error.message || 'Failed to delete contact list');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Load incoming requests on mount
   useEffect(() => {
     if (!profileLoading && activeProfile && isUserProfile && activeProfile?.type === 'user') {
@@ -211,6 +300,11 @@ export default function Contacts() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileLoading, activeProfile?.type, isUserProfile]);
+
+  // Fetch contact lists on mount
+  useEffect(() => {
+    fetchContactLists();
+  }, [fetchContactLists]);
 
   // Handle accepting/rejecting connection requests
   const handleConnectionAction = async (action, connectionId, userId) => {
@@ -273,14 +367,14 @@ export default function Contacts() {
           <div className="flex gap-2">
             <Button 
               onClick={handleExportAll} 
-              className="flex items-center gap-2 bg-green-500 hover:bg-green-600"
+              className="flex items-center gap-2 border border-gray-300 bg-transparent hover:bg-gray-300 text-black"
             >
               <MdFileDownload size={20} />
               Export All
             </Button>
             <Button 
               onClick={() => setShowImportModal(true)} 
-              className="flex items-center gap-2 bg-purple-500 hover:bg-purple-600"
+              className="flex items-center gap-2 border border-gray-300 bg-transparent hover:bg-gray-300 text-black"
             >
               <MdFileUpload size={20} />
               Import CSV
@@ -422,12 +516,178 @@ export default function Contacts() {
         onClear={() => setSelectedContacts(new Set())}
       />
 
+      {/* Tabs */}
+      <div className="bg-white shadow rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="border-b border-gray-200 flex-1">
+            <nav className="-mb-px flex space-x-8 overflow-x-auto">
+              {/* All Contacts tab (for personal users) */}
+              {isUserProfile && (
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'all'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  All Contacts
+                </button>
+              )}
+              
+              {/* Business/Personal tabs for business profiles */}
+              {isBusinessProfile && (
+                <>
+                  <button
+                    onClick={() => setActiveTab('business')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                      activeTab === 'business'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Business Contacts
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('personal')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                      activeTab === 'personal'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Personal Contacts
+                  </button>
+                </>
+              )}
+
+              {/* Custom contact lists */}
+              {contactLists.map((list) => (
+                <div key={list._id} className="flex items-center gap-2 group">
+                  <button
+                    onClick={() => setActiveTab(list._id)}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                      activeTab === list._id
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {list.name}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteList(list._id)}
+                    className="text-red-500 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete list"
+                  >
+                    <MdDelete size={16} />
+                  </button>
+                </div>
+              ))}
+            </nav>
+          </div>
+          <Button
+            onClick={() => setShowListForm(!showListForm)}
+            className="ml-4 flex items-center gap-2"
+          >
+            <MdList size={18} />
+            Create List
+          </Button>
+        </div>
+
+        {/* Create List Form */}
+        {showListForm && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h3 className="font-semibold mb-3">Create New Contact List</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  List Name *
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.name}
+                  onChange={(e) => setListFormData({ ...listFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Businesses, Suppliers"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.description}
+                  onChange={(e) => setListFormData({ ...listFormData, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional description"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  List Type *
+                </label>
+                <select
+                  value={listFormData.type}
+                  onChange={(e) => setListFormData({ ...listFormData, type: e.target.value, filterCriteria: e.target.value === 'filter' ? {} : undefined })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="manual">Manual (add contacts manually)</option>
+                  <option value="filter">Filter (auto-populate by criteria)</option>
+                </select>
+              </div>
+              {listFormData.type === 'filter' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Filter by Type
+                  </label>
+                  <select
+                    value={listFormData.filterCriteria?.type || ''}
+                    onChange={(e) => setListFormData({
+                      ...listFormData,
+                      filterCriteria: { ...listFormData.filterCriteria, type: e.target.value || undefined }
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Types</option>
+                    <option value="client">Client</option>
+                    <option value="business">Business</option>
+                    <option value="supplier">Supplier</option>
+                    <option value="contractor">Contractor</option>
+                  </select>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCreateList}
+                  disabled={!listFormData.name.trim() || loading}
+                  className="flex items-center gap-2"
+                >
+                  Create List
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowListForm(false);
+                    setListFormData({ name: '', description: '', type: 'manual', filterCriteria: {} });
+                  }}
+                  className="bg-gray-500 hover:bg-gray-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Contact List */}
       <ContactList
         onEdit={handleEdit}
         onView={handleView}
         onRefresh={refreshTrigger}
         onSelectedContactsChange={setSelectedContacts}
+        businessId={isBusinessProfile && activeTab === 'business' ? currentBusinessId : (isUserProfile && activeTab === 'all' ? undefined : null)}
+        listId={typeof activeTab === 'string' && activeTab !== 'all' && activeTab !== 'business' && activeTab !== 'personal' ? activeTab : null}
       />
 
       {/* Import Modal */}

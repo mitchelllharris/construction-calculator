@@ -59,6 +59,7 @@ export default function Profile() {
   const [connectionLoading, setConnectionLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [followStatus, setFollowStatus] = useState(null);
+  const [justSentRequest, setJustSentRequest] = useState(false);
 
   let isOwnProfile = false;
   // Profile page is for user profiles only, so only check if active profile is a user profile
@@ -74,15 +75,19 @@ export default function Profile() {
   }, [username, id]);
 
   useEffect(() => {
-    if (profile && !isOwnProfile && profile.id && isUserProfile && activeProfile?.type === 'user') {
-      fetchConnectionStatus();
+    if (profile && !isOwnProfile && profile.id && (isUserProfile || isBusinessProfile) && (activeProfile?.type === 'user' || activeProfile?.type === 'business')) {
+      // Don't refetch if we just sent a request (to preserve optimistic update)
+      if (!justSentRequest) {
+        fetchConnectionStatus();
+      }
       fetchFollowStatus();
-    } else if (isOwnProfile || !isUserProfile || activeProfile?.type !== 'user') {
+    } else if (isOwnProfile || (!isUserProfile && !isBusinessProfile) || (activeProfile?.type !== 'user' && activeProfile?.type !== 'business')) {
       setConnectionStatus(null);
       setFollowStatus(null);
+      setJustSentRequest(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id, isOwnProfile, isUserProfile, activeProfile?.type]);
+  }, [profile?.id, isOwnProfile, isUserProfile, isBusinessProfile, activeProfile?.type]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -139,15 +144,52 @@ export default function Profile() {
       setConnectionStatus(null);
       return;
     }
+    // Don't overwrite pending_sent status if we just sent a request
+    // Keep the optimistic update until the flag is reset
+    if (justSentRequest && (connectionStatus?.status === 'pending_sent' || connectionStatus?.status === 'pending')) {
+      return;
+    }
     try {
-      const statusData = await getConnectionStatus(profile.id);
-      setConnectionStatus(statusData);
+      const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+      const recipientType = 'User'; // Profile page is always for users
+      const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+      const statusData = await getConnectionStatus(profile.id, requesterType, recipientType, businessId);
+      // If we just sent a request and have pending_sent, preserve it unless server confirms it
+      // The server should return 'pending_sent' if we're the requester
+      if (justSentRequest && connectionStatus?.status === 'pending_sent') {
+        // If server returns pending_sent, use that. Otherwise keep our optimistic update
+        if (statusData.status === 'pending_sent' || statusData.status === 'pending') {
+          // Server confirms pending status - update with server data but ensure it's pending_sent
+          setConnectionStatus({
+            ...statusData,
+            status: statusData.status === 'pending' ? 'pending_sent' : statusData.status
+          });
+        } else {
+          // Server returned something else, keep our optimistic update
+          return;
+        }
+      } else {
+        // Normal case - update with server data
+        // If server returns 'pending', we need to check if we're the requester
+        // The server should return 'pending_sent' but if it returns 'pending', convert it
+        if (statusData.status === 'pending' && statusData.connection) {
+          // Check if we're the requester by checking the connection object
+          // For now, trust the server's status, but ensure pending_sent is used when appropriate
+          // The server should already handle this, but we'll preserve what it returns
+          setConnectionStatus(statusData);
+        } else {
+          setConnectionStatus(statusData);
+        }
+      }
       if (statusData.isBlocked) {
         setIsBlocked(true);
       }
-    } catch (err) {
+    } catch {
       // User might not be connected, that's okay - set default status
-      setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+      // Only set default if we're not preserving a pending_sent status
+      if (!justSentRequest || connectionStatus?.status !== 'pending_sent') {
+        setConnectionStatus({ status: 'none', connection: null, isFollowing: false, isBlocked: false });
+      }
     }
   };
 
@@ -166,8 +208,8 @@ export default function Profile() {
   };
 
   const handleConnectionAction = async (action, connectionId, userId) => {
-    if (!isUserProfile || activeProfile?.type !== 'user') {
-      showError('You must be logged in as a user to manage connections');
+    if (!isUserProfile && !isBusinessProfile) {
+      showError('You must be logged in to manage connections');
       return;
     }
 
@@ -176,13 +218,47 @@ export default function Profile() {
       let result;
       switch (action) {
         case 'send':
-          const requesterType = isUserProfile && activeProfile?.type === 'user' ? 'User' : 'Business';
+          const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
           const recipientType = 'User'; // Profile page is always for users
           const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
-          result = await sendConnectionRequest(userId, requesterType, recipientType, businessId);
-          showSuccess('Connection request sent');
-          // Refresh connection status
-          await fetchConnectionStatus();
+          
+          // Ensure userId exists and convert to string (handles ObjectId objects)
+          if (!userId) {
+            showError('Invalid user ID');
+            return;
+          }
+          
+          // Convert to string (handles both string IDs and ObjectId objects)
+          const recipientId = String(userId);
+          
+          try {
+            result = await sendConnectionRequest(recipientId, requesterType, recipientType, businessId);
+            showSuccess('Connection request sent');
+            // Set status optimistically and keep it
+            setJustSentRequest(true);
+            if (result?.connection) {
+              setConnectionStatus({
+                status: 'pending_sent',
+                connection: result.connection,
+                isBlocked: false
+              });
+            } else {
+              // If no connection in result, still set pending_sent status
+              setConnectionStatus({
+                status: 'pending_sent',
+                connection: null,
+                isBlocked: false
+              });
+            }
+            // Reset the flag after a longer delay to ensure the status persists
+            // The flag prevents the useEffect from overwriting our optimistic update
+            setTimeout(() => {
+              setJustSentRequest(false);
+            }, 5000);
+          } catch (err) {
+            // Error is already handled by the catch block below
+            throw err;
+          }
           break;
         case 'follow':
           // Use the separate follow system (not connection-based)
@@ -202,7 +278,15 @@ export default function Profile() {
           break;
         case 'remove':
           await removeConnection(connectionId);
-          showSuccess('Connection removed');
+          // Check if it was a pending request or accepted connection
+          const currentStatus = connectionStatus?.status;
+          if (currentStatus === 'pending' || currentStatus === 'pending_sent') {
+            showSuccess('Connection request canceled');
+          } else {
+            showSuccess('Connection removed');
+          }
+          setJustSentRequest(false); // Reset flag when removing
+          await fetchConnectionStatus();
           break;
         case 'block':
           await blockUser(userId);
@@ -732,11 +816,12 @@ export default function Profile() {
                       <MdEdit size={18} />
                       Edit Profile
                     </Button>
-                  ) : isUserProfile && activeProfile?.type === 'user' && !isOwnProfile && !isBlocked ? (
+                  ) : (isUserProfile || isBusinessProfile) && (activeProfile?.type === 'user' || activeProfile?.type === 'business') && !isOwnProfile && !isBlocked ? (
                     <div className="flex items-center gap-2">
-                      {connectionStatus?.status === 'none' && (
+                      {/* Connect Button */}
+                      {(!connectionStatus || connectionStatus?.status === 'none') && (
                         <Button
-                          onClick={() => handleConnectionAction('send', profile.id)}
+                          onClick={() => handleConnectionAction('send', null, profile.id)}
                           disabled={connectionLoading}
                           className="flex items-center gap-2"
                         >
@@ -748,30 +833,49 @@ export default function Profile() {
                           Connected
                         </span>
                       )}
+                      {connectionStatus && 
+                       (connectionStatus.status === 'pending' || 
+                        connectionStatus.status === 'pending_sent' || 
+                        connectionStatus.status === 'pending_received') && (
+                        <span className="px-3 py-1.5 text-sm text-gray-600 italic">
+                          Connection request sent
+                        </span>
+                      )}
+                      
+                      {/* Follow Button */}
+                      {(!followStatus || followStatus?.status === 'none') && (
+                        <Button
+                          onClick={() => handleConnectionAction('follow', null, profile.id)}
+                          disabled={connectionLoading}
+                          className="flex items-center gap-2"
+                        >
+                          Follow
+                        </Button>
+                      )}
                       {followStatus?.status === 'accepted' && (
                         <span className="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg">
                           Following
                         </span>
                       )}
                       {followStatus?.status === 'pending' && (
-                        <span className="px-3 py-1.5 text-sm bg-yellow-100 text-yellow-700 rounded-lg">
-                          Follow Request Sent
-                        </span>
+                        <Button
+                          onClick={() => handleConnectionAction('unfollow', null, profile.id)}
+                          disabled={connectionLoading}
+                          className="flex items-center gap-2"
+                        >
+                          Cancel Follow Request
+                        </Button>
                       )}
-                      {connectionStatus && followStatus ? (
-                        <ConnectionActionsMenu
-                          connectionStatus={connectionStatus.status || 'none'}
-                          followStatus={followStatus.status || 'none'}
-                          isFollowing={followStatus.status === 'accepted'}
-                          connectionId={connectionStatus.connection?._id}
-                          userId={profile.id}
-                          onAction={handleConnectionAction}
-                        />
-                      ) : (
-                        <div className="p-2 text-gray-400">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-400"></div>
-                        </div>
-                      )}
+                      
+                      {/* More Menu */}
+                      <ConnectionActionsMenu
+                        connectionStatus={connectionStatus?.status || 'none'}
+                        followStatus={followStatus?.status || 'none'}
+                        isFollowing={followStatus?.status === 'accepted'}
+                        connectionId={connectionStatus?.connection?._id}
+                        userId={profile.id}
+                        onAction={handleConnectionAction}
+                      />
                     </div>
                   ) : null}
                 </div>
@@ -1242,21 +1346,6 @@ export default function Profile() {
                 ))}
               </div>
             </EditableSection>
-
-            {/* Service Areas */}
-            {profile.serviceAreas && profile.serviceAreas.length > 0 && (
-              <div className="bg-white shadow rounded-lg p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">Service Areas</h3>
-                <div className="space-y-2">
-                  {profile.serviceAreas.map((area, index) => (
-                    <div key={index} className="flex items-center gap-2 text-gray-700">
-                      <MdCheckCircle className="text-green-500" size={16} />
-                      <span>{area}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* License Numbers */}
             {profile.licenseNumbers && profile.licenseNumbers.length > 0 && (

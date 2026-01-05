@@ -12,21 +12,19 @@ import Button from '../components/Button';
 export default function BlockedUsers() {
   const navigate = useNavigate();
   const { showError, showSuccess } = useToast();
-  const { isUserProfile, activeProfile } = useProfileSwitcher();
+  const { isUserProfile, isBusinessProfile, activeProfile } = useProfileSwitcher();
   
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [unblocking, setUnblocking] = useState({});
 
   useEffect(() => {
-    if (!isUserProfile || activeProfile?.type !== 'user') {
-      showError('You must be logged in as a user to view blocked users');
-      navigate('/dashboard');
+    if (!activeProfile) {
       return;
     }
     fetchBlockedUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUserProfile, activeProfile?.type]);
+  }, [activeProfile]);
 
   const fetchBlockedUsers = async () => {
     setLoading(true);
@@ -93,7 +91,7 @@ export default function BlockedUsers() {
           </button>
           <h1 className="text-3xl font-bold mb-2">Blocked Users</h1>
           <p className="text-gray-600">
-            Users you have blocked ({blockedUsers.length})
+            {isBusinessProfile ? 'Business' : 'Users'} you have blocked ({blockedUsers.length})
           </p>
         </div>
 

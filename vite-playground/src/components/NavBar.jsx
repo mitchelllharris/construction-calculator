@@ -1,11 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom';
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { MdPerson, MdSettings, MdLogout, MdArrowDropDown, MdBusiness } from 'react-icons/md';
 import ProfileSwitcher from './ProfileSwitcher';
 
 export default function NavBar() {
     const { isAuthenticated, logout, user } = useAuth();
+    const { isBusinessProfile } = useProfileSwitcher();
     const navigate = useNavigate();
     const [showDropdown, setShowDropdown] = useState(false);
     const dropdownRef = useRef(null);
@@ -63,10 +65,12 @@ export default function NavBar() {
                     <Link className='hover:opacity-60' to="/find-people">Find People</Link>
                     <Link className='hover:opacity-60' to="/contacts">Contacts</Link>
                     <Link className='hover:opacity-60' to="/clients">Clients</Link>
-                    <Link className='hover:opacity-60 flex items-center gap-1' to="/create-business">
-                        <MdBusiness size={18} />
-                        Create Business
-                    </Link>
+                    {!isBusinessProfile && (
+                        <Link className='hover:opacity-60 flex items-center gap-1' to="/create-business">
+                            <MdBusiness size={18} />
+                            Create Business
+                        </Link>
+                    )}
                     <Link className='hover:opacity-60' to="/settings">Settings</Link>
                 </div>
             )}

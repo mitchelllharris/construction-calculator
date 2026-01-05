@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
 import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
@@ -13,7 +13,16 @@ import { MdBusiness, MdArrowBack } from 'react-icons/md';
 export default function CreateBusiness() {
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
-  const { refreshBusinesses, switchToBusiness } = useProfileSwitcher();
+  const { refreshBusinesses, switchToBusiness, isBusinessProfile, switchToUser } = useProfileSwitcher();
+  
+  // Redirect if user is on a business profile
+  useEffect(() => {
+    if (isBusinessProfile) {
+      showError('Business accounts cannot create other businesses. Please switch to your personal account.');
+      switchToUser();
+      navigate('/settings');
+    }
+  }, [isBusinessProfile, navigate, showError, switchToUser]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     businessName: '',

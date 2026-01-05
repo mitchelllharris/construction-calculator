@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { getToken } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
 import { useToast } from '../contexts/ToastContext';
@@ -13,7 +13,8 @@ import {
   getConnections,
   removeConnection,
   blockUser,
-  unblockUser
+  unblockUser,
+  getSuggestedConnections
 } from '../utils/connectionApi';
 import { getFollowStatus, followUser, unfollowUser } from '../utils/followApi';
 import ConnectionActionsMenu from '../components/ConnectionActionsMenu';
@@ -30,6 +31,8 @@ export default function FindPeople() {
   const [connectionLoading, setConnectionLoading] = useState({});
   const [outgoingRequests, setOutgoingRequests] = useState([]);
   const [loadingOutgoing, setLoadingOutgoing] = useState(false);
+  const [suggestedConnections, setSuggestedConnections] = useState([]);
+  const [loadingSuggested, setLoadingSuggested] = useState(false);
   const navigate = useNavigate();
   const { showError, showSuccess } = useToast();
   const { user } = useAuth();
@@ -37,14 +40,18 @@ export default function FindPeople() {
 
   // Fetch connection statuses for multiple users
   const fetchConnectionStatuses = useCallback(async (users) => {
-    if (!isUserProfile || activeProfile?.type !== 'user') return;
+    if (!activeProfile) return;
     
     const userList = users.filter(user => !user.isBusiness && user._id);
     
     // Fetch connection statuses
+    const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+    const recipientType = 'User'; // FindPeople shows users, not businesses
+    const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+    
     const connectionPromises = userList.map(async (user) => {
       try {
-        const statusData = await getConnectionStatus(user._id);
+        const statusData = await getConnectionStatus(user._id, requesterType, recipientType, businessId);
         return { 
           userId: user._id, 
           status: statusData.status, 
@@ -241,8 +248,8 @@ export default function FindPeople() {
         const combinedResults = [...formattedUsers, ...formattedBusinesses];
         setResults(combinedResults);
         
-        // Fetch connection statuses for users (only if logged in as a user)
-        if (isUserProfile && activeProfile?.type === 'user') {
+        // Fetch connection statuses for users (works for both user and business profiles)
+        if (activeProfile) {
           fetchConnectionStatuses(formattedUsers);
         }
       }
@@ -256,27 +263,92 @@ export default function FindPeople() {
 
   // Fetch outgoing connection requests
   const fetchOutgoingRequests = useCallback(async () => {
-    if (!isUserProfile || activeProfile?.type !== 'user') {
+    if (!activeProfile) {
       return;
     }
 
     setLoadingOutgoing(true);
     try {
-      const data = await getConnections({ status: 'pending', type: 'sent' });
-      setOutgoingRequests(data.connections || []);
+      const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+      const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+      const data = await getConnections({ 
+        status: 'pending', 
+        type: 'sent',
+        requesterType,
+        businessId
+      });
+      const connections = data.connections || [];
+      setOutgoingRequests(connections);
+      
+      // Update connection statuses for users in search results who have pending requests
+      if (connections.length > 0 && results.length > 0) {
+        const pendingUserIds = connections.map(conn => conn.otherUser?._id || conn.otherUser?.id);
+        const usersToUpdate = results.filter(user => 
+          pendingUserIds.some(id => id && (user._id === id || user.id === id))
+        );
+        if (usersToUpdate.length > 0) {
+          // Update statuses for these users to pending_sent
+          setConnectionStatuses(prev => {
+            const updated = { ...prev };
+            connections.forEach(conn => {
+              const userId = conn.otherUser?._id || conn.otherUser?.id;
+              if (userId) {
+                updated[userId] = {
+                  status: 'pending_sent',
+                  connection: { _id: conn._id },
+                  isBlocked: false
+                };
+              }
+            });
+            return updated;
+          });
+        }
+      }
     } catch (error) {
       showError(error.message || 'Failed to load outgoing requests');
     } finally {
       setLoadingOutgoing(false);
     }
-  }, [isUserProfile, activeProfile, showError]);
+  }, [activeProfile, isBusinessProfile, showError, results]);
 
-  // Load outgoing requests on mount and after connection actions
-  useEffect(() => {
-    if (!profileLoading && activeProfile && isUserProfile && activeProfile?.type === 'user') {
-      fetchOutgoingRequests();
+  // Fetch suggested connections
+  const fetchSuggestedConnections = useCallback(async () => {
+    if (!activeProfile) {
+      return;
     }
-  }, [profileLoading, activeProfile, isUserProfile, fetchOutgoingRequests]);
+
+    setLoadingSuggested(true);
+    try {
+      const data = await getSuggestedConnections(20);
+      const suggestions = (data.suggestions || []).map(item => ({
+        ...item,
+        id: item._id || item.id,
+        businessId: item.businessId || item._id
+      }));
+      setSuggestedConnections(suggestions);
+      
+      // Fetch connection statuses for suggested connections
+      if (suggestions.length > 0) {
+        fetchConnectionStatuses(suggestions);
+      }
+    } catch (error) {
+      // Silently fail for suggestions - not critical
+    } finally {
+      setLoadingSuggested(false);
+    }
+  }, [activeProfile, fetchConnectionStatuses]);
+
+  // Load outgoing requests and suggested connections on mount and when navigating to this page
+  useEffect(() => {
+    if (!profileLoading && activeProfile && location.pathname === '/find-people') {
+      fetchOutgoingRequests();
+      fetchSuggestedConnections();
+      // Also refresh connection statuses for existing search results when navigating to this page
+      if (results.length > 0) {
+        fetchConnectionStatuses(results);
+      }
+    }
+  }, [profileLoading, activeProfile, location.pathname, fetchOutgoingRequests, fetchSuggestedConnections]);
 
   // Debounce search input
   useEffect(() => {
@@ -348,7 +420,13 @@ export default function FindPeople() {
           break;
         case 'remove':
           await removeConnection(connectionId);
-          showSuccess('Connection removed');
+          // Check if it was a pending request or accepted connection
+          const currentStatus = connectionStatuses[userId]?.status;
+          if (currentStatus === 'pending' || currentStatus === 'pending_sent') {
+            showSuccess('Connection request canceled');
+          } else {
+            showSuccess('Connection removed');
+          }
           break;
         case 'block':
           await blockUser(userId);
@@ -393,21 +471,76 @@ export default function FindPeople() {
           }));
         }
       } else {
-        const newStatus = action === 'send' ? 'pending_sent' : action === 'accept' ? 'accepted' : 'rejected';
-        setConnectionStatuses(prev => ({
-          ...prev,
-          [userId]: { status: newStatus, connection: result?.connection || null, isBlocked: false }
-        }));
+        // For 'send' action, refresh the status from the server to get the correct pending_sent status
+        if (action === 'send') {
+          // Refresh the connection status for this specific user
+          try {
+            const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+            const recipientType = 'User';
+            const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+            const statusData = await getConnectionStatus(userId, requesterType, recipientType, businessId);
+            setConnectionStatuses(prev => ({
+              ...prev,
+              [userId]: { status: statusData.status, connection: statusData.connection || result?.connection, isBlocked: false }
+            }));
+          } catch {
+            // Fallback to pending_sent if refresh fails
+            setConnectionStatuses(prev => ({
+              ...prev,
+              [userId]: { status: 'pending_sent', connection: result?.connection || null, isBlocked: false }
+            }));
+          }
+        } else {
+          const newStatus = action === 'accept' ? 'accepted' : 'rejected';
+          setConnectionStatuses(prev => ({
+            ...prev,
+            [userId]: { status: newStatus, connection: result?.connection || null, isBlocked: false }
+          }));
+        }
       }
 
       // Refresh outgoing requests if we sent a request
       if (action === 'send') {
-        fetchOutgoingRequests();
+        // Wait for outgoing requests to refresh so the list updates
+        await fetchOutgoingRequests();
+        // Also refresh connection statuses for search results to update the button
+        if (results && results.length > 0) {
+          await fetchConnectionStatuses(results);
+        }
+        if (suggestedConnections && suggestedConnections.length > 0) {
+          await fetchConnectionStatuses(suggestedConnections);
+        }
       }
 
       // Refresh connection statuses after actions
-      if (['accept', 'reject', 'remove', 'block', 'unblock'].includes(action) && results) {
-        fetchConnectionStatuses(results);
+      if (['accept', 'reject', 'remove', 'block', 'unblock'].includes(action)) {
+        if (results && results.length > 0) {
+          fetchConnectionStatuses(results);
+        }
+        if (suggestedConnections && suggestedConnections.length > 0) {
+          fetchConnectionStatuses(suggestedConnections);
+        }
+      }
+      
+      // For remove action, also refresh the specific user's status and outgoing requests
+      if (action === 'remove') {
+        try {
+          const requesterType = isBusinessProfile && activeProfile?.type === 'business' ? 'Business' : 'User';
+          const recipientType = 'User';
+          const businessId = isBusinessProfile && activeProfile?.type === 'business' ? activeProfile?.id : null;
+          const statusData = await getConnectionStatus(userId, requesterType, recipientType, businessId);
+          setConnectionStatuses(prev => ({
+            ...prev,
+            [userId]: { status: statusData.status, connection: statusData.connection, isBlocked: false }
+          }));
+        } catch {
+          setConnectionStatuses(prev => ({
+            ...prev,
+            [userId]: { status: 'none', connection: null, isBlocked: false }
+          }));
+        }
+        // Refresh outgoing requests list after removing a connection
+        await fetchOutgoingRequests();
       }
     } catch (error) {
       showError(error.message || 'Failed to perform connection action');
@@ -530,14 +663,29 @@ export default function FindPeople() {
           </div>
         );
       case 'pending_sent':
+      case 'pending':
         return (
-          <button
-            className="connection-button px-3 py-1.5 text-sm bg-yellow-100 text-yellow-700 rounded-lg cursor-not-allowed flex items-center gap-1"
-            disabled
-          >
-            <MdHourglassEmpty size={16} />
-            <span>Pending</span>
-          </button>
+          <div className="connection-button flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleConnectionAction('remove', userIdKey, connection?._id);
+              }}
+              disabled={isLoading}
+              className="px-3 py-1.5 text-sm bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 flex items-center gap-1"
+            >
+              <MdClose size={16} />
+              <span>Cancel Request</span>
+            </button>
+            <ConnectionActionsMenu
+              connectionStatus={status}
+              followStatus={followStatus}
+              isFollowing={followStatus === 'accepted'}
+              connectionId={connection?._id}
+              userId={userIdKey}
+              onAction={handleConnectionAction}
+            />
+          </div>
         );
       case 'pending_received':
         return (
@@ -590,7 +738,7 @@ export default function FindPeople() {
       </div>
 
       {/* Outgoing Connection Requests */}
-      {isUserProfile && activeProfile?.type === 'user' && outgoingRequests.length > 0 && (
+      {activeProfile && (activeProfile?.type === 'user' || activeProfile?.type === 'business') && outgoingRequests.length > 0 && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <MdHourglassEmpty size={24} />
@@ -794,6 +942,96 @@ export default function FindPeople() {
         <div className="bg-white shadow rounded-lg p-12 text-center">
           <MdSearch size={48} className="mx-auto text-gray-400 mb-4" />
           <p className="text-gray-600 text-lg">Start typing to search for people and businesses</p>
+        </div>
+      )}
+
+      {/* Suggested Connections */}
+      {!loading && isUserProfile && activeProfile?.type === 'user' && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggested Connections</h2>
+          {loadingSuggested ? (
+            <div className="bg-white shadow rounded-lg p-12 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading suggestions...</p>
+            </div>
+          ) : suggestedConnections.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {suggestedConnections.map((item) => (
+                <div
+                  key={item.id || item.businessId}
+                  onClick={(e) => handleUserClick(item, e)}
+                  className="bg-white shadow rounded-lg p-4 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200 hover:border-blue-500"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    {getImageUrl(item.avatar) ? (
+                      <img
+                        src={getImageUrl(item.avatar)}
+                        alt={item.fullName || item.businessName}
+                        className="w-16 h-16 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className={`w-16 h-16 rounded-full ${item.isBusiness ? 'bg-green-500' : 'bg-blue-500'} flex items-center justify-center text-white font-semibold text-xl shrink-0`}>
+                        {item.isBusiness ? (
+                          <MdBusiness size={24} />
+                        ) : (
+                          getInitials(item)
+                        )}
+                      </div>
+                    )}
+
+                    {/* User/Business Info */}
+                    <div className="flex-1 min-w-0">
+                      {/* Name/Business Name */}
+                      <h3 className="font-bold text-gray-900 truncate">{item.fullName || item.businessName}</h3>
+
+                      {/* Username or Business Type */}
+                      {item.isBusiness ? (
+                        <p className="text-sm text-gray-500 truncate flex items-center gap-1">
+                          <MdBusiness size={14} />
+                          Business
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-500 truncate">@{item.username}</p>
+                      )}
+
+                      {/* Suggestion Reason */}
+                      {item.suggestionReason && (
+                        <p className="text-xs text-blue-600 mt-1 font-medium">
+                          {item.suggestionReason}
+                        </p>
+                      )}
+
+                      {/* Trade */}
+                      {item.trade && (
+                        <div className="flex items-center gap-1 mt-2 text-sm text-gray-600">
+                          <MdWork size={16} />
+                          <span className="truncate">{item.trade}</span>
+                        </div>
+                      )}
+
+                      {/* Location */}
+                      {item.locationString && (
+                        <div className="flex items-center gap-1 mt-1 text-sm text-gray-600">
+                          <MdLocationOn size={16} />
+                          <span className="truncate">{item.locationString}</span>
+                        </div>
+                      )}
+
+                      {/* Connection Button */}
+                      <div className="mt-3">
+                        {renderConnectionButton(item)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white shadow rounded-lg p-8 text-center">
+              <p className="text-gray-600">No suggestions available at this time</p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ const User = db.user;
 const Business = db.business;
 const Connection = db.connection;
 const Contact = db.contact;
+const Follow = db.follow;
 
 // Helper function to check if a user is blocked by another user
 const isUserBlocked = async (blockerId, blockedId) => {
@@ -845,11 +846,17 @@ exports.blockUser = async (req, res) => {
         blocker.blockedUsers.push(targetUserId);
         await blocker.save();
 
-        // Remove any existing connections between the users
+        // Remove any existing connections between the users (all model types)
         const connections = await Connection.find({
             $or: [
-                { requester: blockerId, recipient: targetUserId },
-                { requester: targetUserId, recipient: blockerId }
+                { 
+                    requester: blockerId, 
+                    recipient: targetUserId
+                },
+                { 
+                    requester: targetUserId, 
+                    recipient: blockerId
+                }
             ]
         });
 
@@ -858,6 +865,86 @@ exports.blockUser = async (req, res) => {
                 _id: { $in: connections.map(c => c._id) }
             });
             logger.info(`Removed ${connections.length} connection(s) due to blocking`);
+        }
+
+        // Unfollow in both directions
+        // Remove blocker following target
+        const blockerFollowsTarget = await Follow.find({
+            $or: [
+                {
+                    follower: blockerId,
+                    following: targetUserId,
+                    followerModel: 'User',
+                    followingModel: 'User'
+                },
+                {
+                    follower: blockerId,
+                    following: targetUserId,
+                    followerModel: 'Business',
+                    followingModel: 'User'
+                }
+            ]
+        });
+
+        if (blockerFollowsTarget.length > 0) {
+            await Follow.deleteMany({
+                _id: { $in: blockerFollowsTarget.map(f => f._id) }
+            });
+            logger.info(`Removed ${blockerFollowsTarget.length} follow relationship(s) where blocker follows target`);
+        }
+
+        // Remove target following blocker
+        const targetFollowsBlocker = await Follow.find({
+            $or: [
+                {
+                    follower: targetUserId,
+                    following: blockerId,
+                    followerModel: 'User',
+                    followingModel: 'User'
+                },
+                {
+                    follower: targetUserId,
+                    following: blockerId,
+                    followerModel: 'User',
+                    followingModel: 'Business'
+                }
+            ]
+        });
+
+        if (targetFollowsBlocker.length > 0) {
+            await Follow.deleteMany({
+                _id: { $in: targetFollowsBlocker.map(f => f._id) }
+            });
+            logger.info(`Removed ${targetFollowsBlocker.length} follow relationship(s) where target follows blocker`);
+        }
+
+        // Delete contacts in both directions
+        // Delete blocker's contact for target
+        const blockerContactForTarget = await Contact.find({
+            user: blockerId,
+            platformUserId: targetUserId,
+            isPlatformUser: true
+        });
+
+        if (blockerContactForTarget.length > 0) {
+            await Contact.deleteMany({
+                _id: { $in: blockerContactForTarget.map(c => c._id) }
+            });
+            logger.info(`Removed ${blockerContactForTarget.length} contact(s) where blocker has target as contact`);
+        }
+
+        // Delete target's contact for blocker
+        const targetContactForBlocker = await Contact.find({
+            user: targetUserId,
+            platformUserId: blockerId,
+            isPlatformUser: true
+        });
+
+        if (targetContactForBlocker.length > 0) {
+            await Contact.deleteMany({
+                _id: { $in: targetContactForBlocker.map(c => c._id) }
+            });
+            logger.info(`Removed ${targetContactForBlocker.length} contact(s) where target has blocker as contact`);
         }
 
         return res.status(200).send({
@@ -930,14 +1017,43 @@ exports.getBlockStatus = async (req, res) => {
 exports.getBlockedUsers = async (req, res) => {
     try {
         const userId = req.userId;
-
-        const user = await User.findById(userId).select('blockedUsers').populate('blockedUsers', 'username firstName lastName avatar accountId email');
-
-        if (!user) {
-            return res.status(404).send({ message: "User not found" });
+        
+        // Get active profile context
+        const { getActiveAccountContext } = require("../utils/permissions");
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+        
+        // Determine if we're on a business profile
+        let isBusinessProfile = false;
+        let activeBusiness = null;
+        
+        if (activeAccountId) {
+            const user = await User.findById(userId).select('accountId');
+            if (user && user.accountId && Number(user.accountId) !== Number(activeAccountId)) {
+                // User is on a business profile
+                activeBusiness = await Business.findOne({ 
+                    ownerId: userId,
+                    accountId: activeAccountId 
+                }).select('blockedUsers');
+                
+                if (activeBusiness) {
+                    isBusinessProfile = true;
+                }
+            }
         }
-
-        const blockedUsers = user.blockedUsers || [];
+        
+        let blockedUsers = [];
+        
+        if (isBusinessProfile && activeBusiness) {
+            blockedUsers = await User.find({
+                _id: { $in: activeBusiness.blockedUsers || [] }
+            }).select('username firstName lastName avatar accountId email');
+        } else {
+            const user = await User.findById(userId).select('blockedUsers').populate('blockedUsers', 'username firstName lastName avatar accountId email');
+            if (!user) {
+                return res.status(404).send({ message: "User not found" });
+            }
+            blockedUsers = user.blockedUsers || [];
+        }
 
         return res.status(200).send({
             blockedUsers: blockedUsers.map(u => ({

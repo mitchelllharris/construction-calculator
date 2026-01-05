@@ -3,14 +3,26 @@ const mongoose = require('mongoose');
 const followSchema = new mongoose.Schema({
     follower: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
         required: true,
+        refPath: 'followerModel',
+        index: true
+    },
+    followerModel: {
+        type: String,
+        required: true,
+        enum: ['User', 'Business'],
         index: true
     },
     following: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
         required: true,
+        refPath: 'followingModel',
+        index: true
+    },
+    followingModel: {
+        type: String,
+        required: true,
+        enum: ['User', 'Business'],
         index: true
     },
     status: {
@@ -32,7 +44,7 @@ const followSchema = new mongoose.Schema({
 });
 
 // Compound index to ensure unique follows
-followSchema.index({ follower: 1, following: 1 }, { unique: true });
+followSchema.index({ follower: 1, following: 1, followerModel: 1, followingModel: 1 }, { unique: true });
 
 // Prevent self-follows
 followSchema.pre('save', async function() {

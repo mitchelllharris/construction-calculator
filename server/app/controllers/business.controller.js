@@ -29,6 +29,34 @@ const generateSlug = async (businessName) => {
 exports.createBusiness = async (req, res) => {
     try {
         const userId = req.userId;
+        
+        // Get active account context to check if user is currently using a business profile
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+        
+        // If activeAccountId is provided, check if it belongs to a business
+        // Only personal user accounts can create businesses
+        if (activeAccountId) {
+            const user = await User.findById(userId);
+            if (!user) {
+                return res.status(404).send({ message: "User not found" });
+            }
+            
+            // If activeAccountId doesn't match user's accountId, they're using a business profile
+            if (user.accountId && Number(user.accountId) !== Number(activeAccountId)) {
+                // Check if activeAccountId belongs to a business owned by this user
+                const activeBusiness = await Business.findOne({ 
+                    ownerId: userId,
+                    accountId: activeAccountId 
+                });
+                
+                if (activeBusiness) {
+                    return res.status(403).send({ 
+                        message: "Business accounts cannot create other businesses. Please switch to your personal account to create a new business." 
+                    });
+                }
+            }
+        }
+        
         const {
             businessName,
             description,

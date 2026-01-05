@@ -6,7 +6,15 @@ const Contact = mongoose.model(
         user: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true
+            required: true,
+            index: true
+        },
+        // Optional: Link contact to a specific business (for business-specific contacts)
+        businessId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Business',
+            index: true,
+            sparse: true
         },
         firstName: {
             type: String,

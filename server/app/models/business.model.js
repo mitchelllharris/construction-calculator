@@ -353,7 +353,12 @@ const Business = mongoose.model(
                 type: Boolean,
                 default: true
             }
-        }
+        },
+        blockedUsers: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            index: true
+        }]
     }, {
         timestamps: true
     })

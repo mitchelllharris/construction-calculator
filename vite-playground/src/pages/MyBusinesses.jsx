@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
+import { useProfileSwitcher } from '../contexts/ProfileSwitcherContext';
 import { get } from '../utils/api';
 import { API_ENDPOINTS } from '../config/api';
 import LoadingPage from '../components/LoadingPage';
@@ -10,6 +11,7 @@ import { MdBusiness, MdAdd, MdLocationOn, MdPhone, MdEmail, MdLink, MdArrowBack 
 export default function MyBusinesses() {
   const navigate = useNavigate();
   const { showError } = useToast();
+  const { isBusinessProfile } = useProfileSwitcher();
   const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -83,13 +85,15 @@ export default function MyBusinesses() {
               <h1 className="text-3xl font-bold text-gray-900 mb-2">My Businesses</h1>
               <p className="text-gray-600">Manage and view all your business profiles</p>
             </div>
-            <Button
-              onClick={() => navigate('/create-business')}
-              className="flex items-center gap-2"
-            >
-              <MdAdd size={18} />
-              Create Business
-            </Button>
+            {!isBusinessProfile && (
+              <Button
+                onClick={() => navigate('/create-business')}
+                className="flex items-center gap-2"
+              >
+                <MdAdd size={18} />
+                Create Business
+              </Button>
+            )}
           </div>
         </div>
 
@@ -100,13 +104,15 @@ export default function MyBusinesses() {
             <p className="text-gray-600 mb-6">
               Create your first business profile to get started
             </p>
-            <Button
-              onClick={() => navigate('/create-business')}
-              className="flex items-center gap-2 mx-auto"
-            >
-              <MdAdd size={18} />
-              Create Your First Business
-            </Button>
+            {!isBusinessProfile && (
+              <Button
+                onClick={() => navigate('/create-business')}
+                className="flex items-center gap-2 mx-auto"
+              >
+                <MdAdd size={18} />
+                Create Your First Business
+              </Button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

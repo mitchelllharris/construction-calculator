@@ -1149,13 +1149,15 @@ export default function Settings() {
         <div className="bg-white shadow rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold">My Businesses</h2>
-            <Button
-              onClick={() => navigate('/create-business')}
-              className="flex items-center gap-2"
-            >
-              <MdAdd size={18} />
-              Create Business
-            </Button>
+            {!isBusinessProfile && (
+              <Button
+                onClick={() => navigate('/create-business')}
+                className="flex items-center gap-2"
+              >
+                <MdAdd size={18} />
+                Create Business
+              </Button>
+            )}
           </div>
 
           {loadingBusinesses ? (
@@ -1166,13 +1168,15 @@ export default function Settings() {
             <div className="text-center py-12">
               <MdBusiness size={48} className="mx-auto text-gray-400 mb-4" />
               <p className="text-gray-600 mb-4">You don't have any businesses yet.</p>
-              <Button
-                onClick={() => navigate('/create-business')}
-                className="flex items-center gap-2 mx-auto"
-              >
-                <MdAdd size={18} />
-                Create Your First Business
-              </Button>
+              {!isBusinessProfile && (
+                <Button
+                  onClick={() => navigate('/create-business')}
+                  className="flex items-center gap-2 mx-auto"
+                >
+                  <MdAdd size={18} />
+                  Create Your First Business
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">

@@ -3,6 +3,9 @@ import React from 'react';
 export default function Button({ text, onClick, type = "button", disabled, children, className = '' }) {
     const content = children || text;
     
+    // Check if className contains a text color class
+    const hasTextColor = /text-(black|white|gray|red|blue|green|yellow|purple|pink|indigo)/.test(className);
+    
     return (
         <button 
             type={type}
@@ -13,7 +16,7 @@ export default function Button({ text, onClick, type = "button", disabled, child
                 cursor-pointer 
                 font-medium 
                 rounded-sm 
-                text-white 
+                ${!hasTextColor ? 'text-white' : ''}
                 px-4 
                 py-2 
                 hover:bg-blue-700 

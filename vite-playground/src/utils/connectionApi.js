@@ -2,14 +2,27 @@ import { getToken } from './api';
 import { API_ENDPOINTS } from '../config/api';
 
 /**
- * Send a connection request to a user
- * @param {string} recipientId - The ID of the user to send the request to
+ * Send a connection request to a user or business
+ * @param {string} recipientId - The ID of the user/business to send the request to
+ * @param {string} requesterType - Type of requester: 'User' or 'Business'
+ * @param {string} recipientType - Type of recipient: 'User' or 'Business'
+ * @param {string} businessId - Business ID if requesterType is 'Business'
  * @returns {Promise<Object>} The connection object
  */
-export const sendConnectionRequest = async (recipientId) => {
+export const sendConnectionRequest = async (recipientId, requesterType = 'User', recipientType = 'User', businessId = null) => {
   const token = getToken();
   if (!token) {
     throw new Error('You must be logged in to send connection requests');
+  }
+
+  const body = { 
+    recipientId: String(recipientId),
+    requesterType,
+    recipientType
+  };
+  
+  if (businessId) {
+    body.businessId = String(businessId);
   }
 
   const response = await fetch(API_ENDPOINTS.CONNECTIONS.SEND_REQUEST, {
@@ -18,13 +31,13 @@ export const sendConnectionRequest = async (recipientId) => {
       'Content-Type': 'application/json',
       'x-access-token': token,
     },
-    body: JSON.stringify({ recipientId }),
+    body: JSON.stringify(body),
   });
 
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || 'Failed to send connection request');
+    throw new Error(data.message || data.errors?.[0]?.msg || 'Failed to send connection request');
   }
 
   return data;
@@ -373,6 +386,36 @@ export const getBlockStatus = async (userId) => {
 
   if (!response.ok) {
     throw new Error(data.message || 'Failed to get block status');
+  }
+
+  return data;
+};
+
+/**
+ * Get suggested connections
+ * @param {number} limit - Maximum number of suggestions to return
+ * @returns {Promise<Object>} Object with suggestions array and count
+ */
+export const getSuggestedConnections = async (limit = 20) => {
+  const token = getToken();
+  if (!token) {
+    throw new Error('You must be logged in to get suggested connections');
+  }
+
+  const params = new URLSearchParams();
+  if (limit) params.append('limit', limit.toString());
+
+  const response = await fetch(`${API_ENDPOINTS.CONNECTIONS.GET_SUGGESTED}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      'x-access-token': token,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to get suggested connections');
   }
 
   return data;

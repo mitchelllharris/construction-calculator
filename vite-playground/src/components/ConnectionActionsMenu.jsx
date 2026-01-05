@@ -39,6 +39,9 @@ export default function ConnectionActionsMenu({
 
   const isConnected = connectionStatus === 'accepted';
   const isBlocked = connectionStatus === 'blocked';
+  const isConnectionPending = connectionStatus === 'pending' || 
+                               connectionStatus === 'pending_sent' || 
+                               connectionStatus === 'pending_received';
   const isFollowingUser = (followStatus === 'accepted') || (followStatus === undefined && isFollowing);
   const followRequestPending = followStatus === 'pending';
 
@@ -58,32 +61,55 @@ export default function ConnectionActionsMenu({
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
           <div className="py-1">
-            {/* Follow/Unfollow options (separate from connections) */}
             {!isBlocked && (
               <>
-                {isFollowingUser ? (
+                {/* Connection-related buttons */}
+                {connectionStatus === 'none' || !connectionStatus ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleAction('unfollow');
+                      handleAction('send');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <MdPersonAdd size={18} />
+                    Connect
+                  </button>
+                ) : isConnectionPending ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Are you sure you want to cancel this connection request?')) {
+                        handleAction('remove');
+                      }
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                   >
                     <MdPersonRemove size={18} />
-                    Unfollow
+                    Cancel Connection Request
                   </button>
-                ) : followRequestPending ? (
+                ) : isConnected ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleAction('unfollow'); // Cancel follow request
+                      if (window.confirm('Are you sure you want to remove this connection?')) {
+                        handleAction('remove');
+                      }
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                   >
                     <MdPersonRemove size={18} />
-                    Cancel Follow Request
+                    Remove Connection
                   </button>
-                ) : (
+                ) : null}
+                
+                {/* Separator before follow options if we have connection buttons */}
+                {(connectionStatus !== 'none' && connectionStatus) && (followStatus === 'none' || !followStatus || isFollowingUser || followRequestPending) && (
+                  <div className="border-t border-gray-200 my-1"></div>
+                )}
+                
+                {/* Follow-related buttons */}
+                {followStatus === 'none' || !followStatus ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -94,24 +120,19 @@ export default function ConnectionActionsMenu({
                     <MdPersonAdd size={18} />
                     Follow
                   </button>
-                )}
-                {isConnected && (
-                  <>
-                    <div className="border-t border-gray-200 my-1"></div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm('Are you sure you want to remove this connection?')) {
-                          handleAction('remove');
-                        }
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      <MdPersonRemove size={18} />
-                      Remove Connection
-                    </button>
-                  </>
-                )}
+                ) : isFollowingUser || followRequestPending ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAction('unfollow');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <MdPersonRemove size={18} />
+                    {followRequestPending ? 'Cancel Follow Request' : 'Unfollow'}
+                  </button>
+                ) : null}
+                
                 <div className="border-t border-gray-200 my-1"></div>
               </>
             )}

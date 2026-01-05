@@ -68,6 +68,16 @@ export const API_ENDPOINTS = {
     EXPORT: `${API_BASE_URL}/api/contacts/export`,
     BULK_DELETE: `${API_BASE_URL}/api/contacts/bulk-delete`,
   },
+  CONTACT_LISTS: {
+    GET_ALL: `${API_BASE_URL}/api/contact-lists`,
+    GET_BY_ID: (id) => `${API_BASE_URL}/api/contact-lists/${id}`,
+    CREATE: `${API_BASE_URL}/api/contact-lists`,
+    UPDATE: (id) => `${API_BASE_URL}/api/contact-lists/${id}`,
+    DELETE: (id) => `${API_BASE_URL}/api/contact-lists/${id}`,
+    GET_CONTACTS: (id) => `${API_BASE_URL}/api/contact-lists/${id}/contacts`,
+    ADD_CONTACT: (listId, contactId) => `${API_BASE_URL}/api/contact-lists/${listId}/contacts/${contactId}`,
+    REMOVE_CONTACT: (listId, contactId) => `${API_BASE_URL}/api/contact-lists/${listId}/contacts/${contactId}`,
+  },
   INTERACTIONS: {
     GET_BY_CONTACT: (contactId) => `${API_BASE_URL}/api/contacts/${contactId}/interactions`,
     GET_BY_ID: (id) => `${API_BASE_URL}/api/interactions/${id}`,
@@ -89,6 +99,7 @@ export const API_ENDPOINTS = {
     UNBLOCK: (userId) => `${API_BASE_URL}/api/connections/unblock/${userId}`,
     GET_BLOCK_STATUS: (userId) => `${API_BASE_URL}/api/connections/block-status/${userId}`,
     GET_BLOCKED: `${API_BASE_URL}/api/connections/blocked`,
+    GET_SUGGESTED: `${API_BASE_URL}/api/connections/suggested`,
   },
   FOLLOW: {
     FOLLOW: (userId) => `${API_BASE_URL}/api/follow/${userId}`,

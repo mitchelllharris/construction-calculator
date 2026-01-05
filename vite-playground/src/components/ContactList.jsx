@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getAllContacts } from '../utils/contactApi';
+import { getContactsForList } from '../utils/contactListApi';
 import { useToast } from '../contexts/ToastContext';
 import ContactCard from './ContactCard';
 import SkeletonCard from './SkeletonCard';
 import Input from './Input';
 import { MdSearch, MdFilterList, MdChevronLeft, MdChevronRight, MdRefresh, MdSort } from 'react-icons/md';
 
-export default function ContactList({ onEdit, onView, onRefresh, onSelectedContactsChange }) {
+export default function ContactList({ onEdit, onView, onRefresh, onSelectedContactsChange, businessId = null, listId = null }) {
   const { showSuccess, showError } = useToast();
   const [contacts, setContacts] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
@@ -33,16 +34,28 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
     // For other cases (page changes, page size changes), no loading indicator
     
     try {
-      const params = {
-        page,
-        limit,
-        search: searchTerm || undefined,
-        type: typeFilter || undefined,
-        sortBy: sortBy || undefined,
-        sortOrder: sortOrder || undefined,
-      };
+      let response;
+      if (listId) {
+        // Fetch contacts from a specific list
+        response = await getContactsForList(listId, {
+          page,
+          limit
+        });
+      } else {
+        // Fetch all contacts with filters
+        const params = {
+          page,
+          limit,
+          search: searchTerm || undefined,
+          type: typeFilter || undefined,
+          sortBy: sortBy || undefined,
+          sortOrder: sortOrder || undefined,
+          businessId: businessId !== undefined ? businessId : undefined,
+          showAll: businessId === undefined ? 'true' : undefined, // Show all for personal users
+        };
+        response = await getAllContacts(params);
+      }
       
-      const response = await getAllContacts(params);
       setContacts(response.contacts || []);
       setPagination(response.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
       const newSet = new Set();
@@ -55,7 +68,7 @@ export default function ContactList({ onEdit, onView, onRefresh, onSelectedConta
       setLoading(false);
       setSearching(false);
     }
-  }, [searchTerm, typeFilter, sortBy, sortOrder, pageSize, pagination.page, showError]);
+  }, [searchTerm, typeFilter, sortBy, sortOrder, pageSize, pagination.page, businessId, listId, showError]);
 
   // Update parent when selected contacts change (separate effect to avoid render issues)
   useEffect(() => {

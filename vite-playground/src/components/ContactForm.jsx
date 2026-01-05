@@ -51,8 +51,13 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
           setValue(key, contact[key] || '');
         }
       });
-      // Set avatar preview if contact has avatar
-      if (contact.avatar) {
+      // Set avatar preview if contact has avatar or platform user avatar
+      if (contact.platformUserId?.avatar) {
+        const avatarUrl = contact.platformUserId.avatar.startsWith('http') 
+          ? contact.platformUserId.avatar 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.platformUserId.avatar}`;
+        setAvatarPreview(avatarUrl);
+      } else if (contact.avatar) {
         const avatarUrl = contact.avatar.startsWith('http') 
           ? contact.avatar 
           : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.avatar}`;
@@ -200,7 +205,8 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
     const result = await onSubmit(cleanedData);
     
     // Upload avatar if a new file was selected (after contact is created/updated)
-    if (avatarFile && result?._id) {
+    // Only upload if contact is NOT a platform user
+    if (avatarFile && result?._id && !isPlatformUser) {
       setUploadingAvatar(true);
       try {
         const uploadResult = await uploadAvatar(result._id, avatarFile);
@@ -234,13 +240,24 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Profile Photo
+            {isPlatformUser && (
+              <span className="ml-2 text-xs text-gray-500 font-normal">(Synced from platform user profile)</span>
+            )}
           </label>
           <div className="flex items-center gap-4">
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               {avatarPreview ? (
                 <img
                   src={avatarPreview}
                   alt="Avatar preview"
+                  className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
+                />
+              ) : contact?.platformUserId?.avatar ? (
+                <img
+                  src={contact.platformUserId.avatar.startsWith('http') 
+                    ? contact.platformUserId.avatar 
+                    : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.platformUserId.avatar}`}
+                  alt={`${contact.firstName} ${contact.lastName}`}
                   className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
                 />
               ) : contact?.avatar ? (
@@ -257,15 +274,24 @@ export default function ContactForm({ contact, onSubmit, onCancel, loading = fal
                 </div>
               )}
             </div>
-            <div className="flex-1">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF or WebP. Max 5MB.</p>
-            </div>
+            {!isPlatformUser && (
+              <div className="flex-1">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF or WebP. Max 5MB.</p>
+              </div>
+            )}
+            {isPlatformUser && (
+              <div className="flex-1">
+                <p className="text-sm text-gray-600 italic">
+                  Profile photo is automatically synced from the platform user's profile and cannot be changed.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

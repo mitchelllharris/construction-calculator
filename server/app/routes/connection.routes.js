@@ -3,6 +3,7 @@ const { apiLimiter } = require("../middlewares/rateLimiter");
 const { body, param } = require("express-validator");
 const { handleValidationErrors } = require("../middlewares/validator");
 const controller = require("../controllers/connection.controller");
+const suggestedController = require("../controllers/suggestedConnections.controller");
 
 module.exports = function(app) {
     app.use(function(req, res, next) {
@@ -172,5 +173,12 @@ module.exports = function(app) {
         "/api/connections/blocked",
         [authJwt.verifyToken],
         controller.getBlockedUsers
+    );
+
+    // Get suggested connections
+    app.get(
+        "/api/connections/suggested",
+        [authJwt.verifyToken],
+        suggestedController.getSuggestedConnections
     );
 };

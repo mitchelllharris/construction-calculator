@@ -2,6 +2,7 @@ import './App.css'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext.jsx'
 import { ProfileSwitcherProvider } from './contexts/ProfileSwitcherContext.jsx'
+import { ConnectionsProvider } from './contexts/ConnectionsContext.jsx'
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx'
 import NavBar from './components/NavBar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
@@ -174,7 +175,9 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <ProfileSwitcherProvider>
-            <AppContent />
+              <ConnectionsProvider>
+                <AppContent />
+              </ConnectionsProvider>
             </ProfileSwitcherProvider>
           </AuthProvider>
         </ToastProvider>

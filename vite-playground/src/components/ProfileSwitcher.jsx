@@ -198,20 +198,24 @@ export default function ProfileSwitcher() {
               <div className="font-medium">View Profile</div>
             </button>
 
-            {/* Create Business Link */}
-            <div className="border-t border-gray-200 my-2"></div>
-            <button
-              onClick={() => {
-                navigate('/create-business');
-                setShowDropdown(false);
-              }}
-              className="w-full text-left px-4 py-3 hover:bg-blue-50 flex items-center gap-3 text-blue-600 transition-colors font-medium"
-            >
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                <MdAdd size={20} className="text-blue-600" />
-              </div>
-              <div className="font-medium">Create Business</div>
-            </button>
+            {/* Create Business Link - Only show for user profiles */}
+            {isUserProfile && (
+              <>
+                <div className="border-t border-gray-200 my-2"></div>
+                <button
+                  onClick={() => {
+                    navigate('/create-business');
+                    setShowDropdown(false);
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-blue-50 flex items-center gap-3 text-blue-600 transition-colors font-medium"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <MdAdd size={20} className="text-blue-600" />
+                  </div>
+                  <div className="font-medium">Create Business</div>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

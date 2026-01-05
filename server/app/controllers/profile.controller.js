@@ -301,7 +301,7 @@ exports.updateProfile = async (req, res) => {
             updates.certifications = normalizedCerts;
         }
         if (req.body.hasOwnProperty('portfolio')) updates.portfolio = Array.isArray(portfolio) ? portfolio : [];
-        if (req.body.hasOwnProperty('serviceAreas')) updates.serviceAreas = Array.isArray(serviceAreas) ? serviceAreas : [];
+        // Service areas are only for businesses, not users
         if (req.body.hasOwnProperty('licenseNumbers')) updates.licenseNumbers = Array.isArray(licenseNumbers) ? licenseNumbers : [];
         if (req.body.hasOwnProperty('socialMedia')) updates.socialMedia = socialMedia || {};
 

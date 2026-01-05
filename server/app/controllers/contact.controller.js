@@ -4,15 +4,63 @@ const logger = require("../utils/logger");
 const { createPhoneSearchRegex, normalizePhone } = require("../utils/phoneSearch");
 const User = db.user;
 const Contact = db.contact;
+const Connection = db.connection;
 
 // Create a new contact
 exports.createContact = async (req, res) => {
     try {
-        const { firstName, lastName, email, phone, type, address, city, state, zip, country, notes, tags, categories, avatar } = req.body;
+        const { firstName, lastName, email, phone, type, address, city, state, zip, country, notes, tags, categories, avatar, businessId } = req.body;
         const user = await User.findById(req.userId);
         if (!user) {
             return res.status(404).send({ message: "User not found" });
         }
+        
+        // Validate businessId if provided (must be owned by the user)
+        if (businessId) {
+            const Business = db.business;
+            const business = await Business.findOne({ _id: businessId, ownerId: req.userId });
+            if (!business) {
+                return res.status(403).send({ message: "Business not found or you don't have permission to add contacts to this business" });
+            }
+        }
+        
+        // Check if contact matches a platform user (by email or phone)
+        let platformUserId = null;
+        let platformUserAvatar = null;
+        let isPlatformUser = false;
+        
+        if (email) {
+            const matchingUser = await User.findOne({ 
+                email: email.toLowerCase().trim() 
+            }).select('_id username firstName lastName avatar accountId email phone');
+            
+            if (matchingUser) {
+                platformUserId = matchingUser._id;
+                platformUserAvatar = matchingUser.avatar;
+                isPlatformUser = true;
+            }
+        }
+        
+        // If no email match, try phone match
+        if (!platformUserId && phone) {
+            const normalizedPhone = phone.replace(/\D/g, '');
+            if (normalizedPhone && normalizedPhone.length >= 10) {
+                const phoneSuffix = normalizedPhone.slice(-10);
+                const users = await User.find({
+                    phone: { $regex: phoneSuffix }
+                }).select('_id username firstName lastName avatar accountId email phone').limit(1);
+                
+                if (users.length > 0) {
+                    platformUserId = users[0]._id;
+                    platformUserAvatar = users[0].avatar;
+                    isPlatformUser = true;
+                }
+            }
+        }
+        
+        // If platform user found, use their avatar instead of provided avatar
+        const finalAvatar = isPlatformUser && platformUserAvatar ? platformUserAvatar : avatar;
+        
         const contact = new Contact({
             user: user._id,
             firstName,
@@ -28,9 +76,17 @@ exports.createContact = async (req, res) => {
             notes,
             tags: tags || [],
             categories: categories || [],
-            avatar
+            avatar: finalAvatar,
+            ...(platformUserId ? { platformUserId, isPlatformUser: true } : {}),
+            ...(businessId ? { businessId } : {})
         });
         const savedContact = await contact.save();
+        
+        // Populate platform user info before returning
+        if (platformUserId) {
+            await savedContact.populate('platformUserId', 'username firstName lastName avatar accountId');
+        }
+        
         return res.status(201).send(savedContact);
     } catch (error) {
         logger.error("Error creating contact:", error);
@@ -46,11 +102,25 @@ exports.getAllContacts = async (req, res) => {
         const skip = (page - 1) * limit;
 
         // Build query
+        // For personal users: show all contacts (both personal and business contacts)
+        // For business profiles: filter by businessId if provided, otherwise show personal contacts
         const query = { user: req.userId };
+        
+        // Handle businessId filter (only apply when businessId is explicitly provided)
+        // If not provided, show all contacts for personal users
+        if (req.query.businessId !== undefined && req.query.businessId !== null && req.query.businessId !== '') {
+            // Filter by businessId if provided (business-specific contacts)
+            query.businessId = req.query.businessId;
+        } else if (req.query.showAll !== 'true') {
+            // For business profiles without businessId, show personal contacts only
+            // For personal users, show all contacts (no filter)
+            // Only apply personal filter if showAll is not explicitly true
+            // This allows personal users to see all contacts by default
+        }
 
         // Debug logging
         logger.info(`[getAllContacts] Fetching contacts for user: ${req.userId}`);
-        logger.info(`[getAllContacts] Query params:`, { page, limit, skip, type: req.query.type, status: req.query.status, search: req.query.search });
+        logger.info(`[getAllContacts] Query params:`, { page, limit, skip, type: req.query.type, status: req.query.status, search: req.query.search, businessId: req.query.businessId });
 
         // Optional filters
         if (req.query.type) {
@@ -97,7 +167,12 @@ exports.getAllContacts = async (req, res) => {
                 searchOr.push({ phone: searchRegex });
             }
             
-            query.$or = searchOr;
+            // Combine search with businessId filter using $and
+            if (query.$and) {
+                query.$and.push({ $or: searchOr });
+            } else {
+                query.$or = searchOr;
+            }
         }
 
         // Build sort object
@@ -109,18 +184,63 @@ exports.getAllContacts = async (req, res) => {
         const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
         const sortObject = { [validSortBy]: sortOrder };
 
+        // Get total count for pagination (before fetching contacts)
+        const total = await Contact.countDocuments(query);
+
         // Get contacts with pagination
         logger.info(`[getAllContacts] Final query:`, JSON.stringify(query));
         logger.info(`[getAllContacts] Sort:`, sortObject);
         const contacts = await Contact.find(query)
             .populate('platformUserId', 'username firstName lastName avatar accountId')
+            .populate('businessId', 'businessName businessSlug')
             .sort(sortObject)
             .skip(skip)
             .limit(limit)
             .select('-__v');
 
-        // Get total count for pagination
-        const total = await Contact.countDocuments(query);
+        // For personal users viewing all contacts, find all businesses that have the same contact
+        // (same email) and attach that information
+        if (req.query.showAll === 'true') {
+            const contactsWithBusinesses = await Promise.all(contacts.map(async (contact) => {
+                const contactObj = contact.toObject();
+                
+                // Find all businesses owned by this user that have a contact with the same email
+                if (contact.email) {
+                    const businessesWithSameContact = await Contact.find({
+                        user: req.userId,
+                        email: contact.email,
+                        businessId: { $exists: true, $ne: null }
+                    })
+                    .populate('businessId', 'businessName businessSlug')
+                    .select('businessId')
+                    .lean();
+                    
+                    // Extract unique businesses
+                    const businessMap = new Map();
+                    businessesWithSameContact.forEach(ct => {
+                        if (ct.businessId && ct.businessId._id) {
+                            businessMap.set(ct.businessId._id.toString(), ct.businessId);
+                        }
+                    });
+                    
+                    contactObj.associatedBusinesses = Array.from(businessMap.values());
+                } else {
+                    contactObj.associatedBusinesses = [];
+                }
+                
+                return contactObj;
+            }));
+            
+            return res.status(200).json({
+                contacts: contactsWithBusinesses,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            });
+        }
 
         // Debug logging
         logger.info(`[getAllContacts] Found ${contacts.length} contacts (total: ${total}) for user: ${req.userId}`);
@@ -138,15 +258,19 @@ exports.getAllContacts = async (req, res) => {
             logger.warn(`[getAllContacts] No contacts found for user: ${req.userId} with query:`, JSON.stringify(query));
         }
 
-        return res.status(200).json({
-            contacts,
-            pagination: {
-                page,
-                limit,
-                total,
-                pages: Math.ceil(total / limit)
-            }
-        });
+        // If showAll is true, we already returned above with associated businesses
+        // Otherwise, return contacts normally
+        if (req.query.showAll !== 'true') {
+            return res.status(200).json({
+                contacts,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            });
+        }
     }
     catch (error) {
         logger.error("Error getting contacts:", error);
@@ -217,25 +341,97 @@ exports.getContactById = async (req, res) => {
 exports.updateContact = async (req, res) => {
     try {
         const { firstName, lastName, email, phone, type, address, city, state, zip, country, notes, tags, categories, avatar } = req.body;
-        const contact = await Contact.findOneAndUpdate({
+        
+        // Get existing contact to check if it's a platform user
+        const existingContact = await Contact.findOne({
             _id: req.params.id,
             user: req.userId
-        }, {
-            firstName,
-            lastName,
-            email,
-            phone,
+        });
+        
+        if (!existingContact) {
+            return res.status(404).send({ message: "Contact not found" });
+        }
+        
+        // Check if contact matches a platform user (by email or phone)
+        let platformUserId = existingContact.platformUserId;
+        let platformUserAvatar = null;
+        let isPlatformUser = existingContact.isPlatformUser || false;
+        
+        // If email or phone changed, re-check for platform user match
+        if ((email && email !== existingContact.email) || (phone && phone !== existingContact.phone)) {
+            platformUserId = null;
+            isPlatformUser = false;
+            
+            if (email) {
+                const matchingUser = await User.findOne({ 
+                    email: email.toLowerCase().trim() 
+                }).select('_id username firstName lastName avatar accountId email phone');
+                
+                if (matchingUser) {
+                    platformUserId = matchingUser._id;
+                    platformUserAvatar = matchingUser.avatar;
+                    isPlatformUser = true;
+                }
+            }
+            
+            // If no email match, try phone match
+            if (!platformUserId && phone) {
+                const normalizedPhone = phone.replace(/\D/g, '');
+                if (normalizedPhone && normalizedPhone.length >= 10) {
+                    const phoneSuffix = normalizedPhone.slice(-10);
+                    const users = await User.find({
+                        phone: { $regex: phoneSuffix }
+                    }).select('_id username firstName lastName avatar accountId email phone').limit(1);
+                    
+                    if (users.length > 0) {
+                        platformUserId = users[0]._id;
+                        platformUserAvatar = users[0].avatar;
+                        isPlatformUser = true;
+                    }
+                }
+            }
+        } else if (existingContact.platformUserId) {
+            // If already a platform user, fetch their current avatar
+            const platformUser = await User.findById(existingContact.platformUserId).select('avatar');
+            if (platformUser) {
+                platformUserAvatar = platformUser.avatar;
+            }
+        }
+        
+        // If platform user, use their avatar instead of provided avatar
+        const finalAvatar = isPlatformUser && platformUserAvatar ? platformUserAvatar : (existingContact.isPlatformUser ? existingContact.avatar : avatar);
+        
+        const updateData = {
+            firstName: isPlatformUser && platformUserId ? undefined : firstName,
+            lastName: isPlatformUser && platformUserId ? undefined : lastName,
+            email: isPlatformUser && platformUserId ? undefined : email,
+            phone: isPlatformUser && platformUserId ? undefined : phone,
             type,
-            address,
-            city,
-            state,
-            zip,
-            country,
+            address: isPlatformUser && platformUserId ? undefined : address,
+            city: isPlatformUser && platformUserId ? undefined : city,
+            state: isPlatformUser && platformUserId ? undefined : state,
+            zip: isPlatformUser && platformUserId ? undefined : zip,
+            country: isPlatformUser && platformUserId ? undefined : country,
             notes,
             tags: tags || [],
             categories: categories || [],
-            avatar
-        }, { new: true });
+            avatar: finalAvatar,
+            ...(platformUserId ? { platformUserId, isPlatformUser: true } : {})
+        };
+        
+        // Remove undefined values
+        Object.keys(updateData).forEach(key => {
+            if (updateData[key] === undefined) {
+                delete updateData[key];
+            }
+        });
+        
+        const contact = await Contact.findOneAndUpdate({
+            _id: req.params.id,
+            user: req.userId
+        }, updateData, { new: true })
+        .populate('platformUserId', 'username firstName lastName avatar accountId');
+        
         if (!contact) {
             return res.status(404).send({ message: "Contact not found" });
         }
@@ -249,13 +445,63 @@ exports.updateContact = async (req, res) => {
 // Delete a contact
 exports.deleteContact = async (req, res) => {
     try {
-        const contact = await Contact.findOneAndDelete({
+        // Find the contact first to check if it's linked to a platform user
+        const contact = await Contact.findOne({
             _id: req.params.id,
             user: req.userId
         });
+        
         if (!contact) {
             return res.status(404).send({ message: "Contact not found" });
         }
+
+        // If this contact is linked to a platform user, remove the connection
+        if (contact.platformUserId && contact.isPlatformUser) {
+            const platformUserId = contact.platformUserId;
+            const currentUserId = req.userId;
+
+            // Find and delete the connection between current user and platform user
+            // Check both directions (current user as requester or recipient)
+            const connections = await Connection.find({
+                $or: [
+                    {
+                        requester: currentUserId,
+                        recipient: platformUserId,
+                        requesterModel: 'User',
+                        recipientModel: 'User'
+                    },
+                    {
+                        requester: platformUserId,
+                        recipient: currentUserId,
+                        requesterModel: 'User',
+                        recipientModel: 'User'
+                    }
+                ]
+            });
+
+            if (connections.length > 0) {
+                await Connection.deleteMany({
+                    _id: { $in: connections.map(c => c._id) }
+                });
+                logger.info(`Removed ${connections.length} connection(s) when deleting contact`);
+            }
+
+            // Also delete the reverse contact (the contact that the platform user has for the current user)
+            const reverseContact = await Contact.findOne({
+                user: platformUserId,
+                platformUserId: currentUserId,
+                isPlatformUser: true
+            });
+
+            if (reverseContact) {
+                await Contact.findByIdAndDelete(reverseContact._id);
+                logger.info(`Removed reverse contact when deleting contact`);
+            }
+        }
+
+        // Delete the contact
+        await Contact.findByIdAndDelete(contact._id);
+
         return res.status(200).send({ message: "Contact deleted successfully" });
     } catch (error) {
         logger.error("Error deleting contact:", error);
@@ -272,7 +518,60 @@ exports.bulkDeleteContacts = async (req, res) => {
             return res.status(400).send({ message: "Contact IDs array is required" });
         }
 
-        // Verify all contacts belong to the user and delete them
+        // Find all contacts first to check for platform user links
+        const contacts = await Contact.find({
+            _id: { $in: contactIds },
+            user: req.userId
+        });
+
+        const currentUserId = req.userId;
+        const platformUserIds = contacts
+            .filter(c => c.platformUserId && c.isPlatformUser)
+            .map(c => c.platformUserId);
+
+        // Remove connections for platform user contacts
+        if (platformUserIds.length > 0) {
+            // Find all connections between current user and these platform users
+            const connections = await Connection.find({
+                $or: [
+                    {
+                        requester: currentUserId,
+                        recipient: { $in: platformUserIds },
+                        requesterModel: 'User',
+                        recipientModel: 'User'
+                    },
+                    {
+                        requester: { $in: platformUserIds },
+                        recipient: currentUserId,
+                        requesterModel: 'User',
+                        recipientModel: 'User'
+                    }
+                ]
+            });
+
+            if (connections.length > 0) {
+                await Connection.deleteMany({
+                    _id: { $in: connections.map(c => c._id) }
+                });
+                logger.info(`Removed ${connections.length} connection(s) when bulk deleting contacts`);
+            }
+
+            // Delete reverse contacts (contacts that platform users have for the current user)
+            const reverseContacts = await Contact.find({
+                user: { $in: platformUserIds },
+                platformUserId: currentUserId,
+                isPlatformUser: true
+            });
+
+            if (reverseContacts.length > 0) {
+                await Contact.deleteMany({
+                    _id: { $in: reverseContacts.map(c => c._id) }
+                });
+                logger.info(`Removed ${reverseContacts.length} reverse contact(s) when bulk deleting contacts`);
+            }
+        }
+
+        // Delete the contacts
         const result = await Contact.deleteMany({
             _id: { $in: contactIds },
             user: req.userId
@@ -423,6 +722,16 @@ exports.uploadAvatar = async (req, res) => {
                 fs.unlinkSync(req.file.path);
             }
             return res.status(404).send({ message: "Contact not found" });
+        }
+
+        // Prevent avatar upload for platform users
+        if (contact.isPlatformUser && contact.platformUserId) {
+            // Delete uploaded file
+            const fs = require('fs');
+            if (req.file.path) {
+                fs.unlinkSync(req.file.path);
+            }
+            return res.status(403).send({ message: "Cannot change avatar for platform users. Avatar is synced from their profile." });
         }
 
         // Delete old avatar if exists

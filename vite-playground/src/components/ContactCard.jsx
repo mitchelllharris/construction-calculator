@@ -34,9 +34,16 @@ export default function ContactCard({ contact, onView, isSelected, onSelect }) {
     .filter(Boolean)
     .join(', ');
 
-  const avatarUrl = contact.avatar 
-    ? (contact.avatar.startsWith('http') ? contact.avatar : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.avatar}`)
-    : null;
+  // Use platform user's avatar if available, otherwise use contact's avatar
+  const avatarUrl = contact.platformUserId?.avatar
+    ? (contact.platformUserId.avatar.startsWith('http') 
+        ? contact.platformUserId.avatar 
+        : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.platformUserId.avatar}`)
+    : (contact.avatar 
+        ? (contact.avatar.startsWith('http') 
+            ? contact.avatar 
+            : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${contact.avatar}`)
+        : null);
 
   const handleCardClick = () => {
     navigate(`/contacts/${contact._id}`);
@@ -64,7 +71,7 @@ export default function ContactCard({ contact, onView, isSelected, onSelect }) {
           )}
           
           {/* Avatar */}
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             {avatarUrl ? (
               <img
                 src={avatarUrl}
@@ -91,6 +98,32 @@ export default function ContactCard({ contact, onView, isSelected, onSelect }) {
               >
                 {getTypeLabel(contact.type)}
               </span>
+              {/* Business associations - show all businesses this contact is associated with */}
+              {contact.associatedBusinesses && contact.associatedBusinesses.length > 0 && (
+                <>
+                  {contact.associatedBusinesses.map((business, idx) => (
+                    <span
+                      key={business._id || idx}
+                      className="px-2 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 flex items-center gap-1"
+                      title={`Contact in ${business.businessName}`}
+                    >
+                      <MdBusiness size={12} />
+                      {business.businessName}
+                    </span>
+                  ))}
+                </>
+              )}
+              {/* Also show if this contact has a businessId (single business association) */}
+              {contact.businessId && typeof contact.businessId === 'object' && contact.businessId.businessName && 
+               (!contact.associatedBusinesses || !contact.associatedBusinesses.some(b => b._id?.toString() === contact.businessId._id?.toString())) && (
+                <span
+                  className="px-2 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 flex items-center gap-1"
+                  title={`Contact in ${contact.businessId.businessName}`}
+                >
+                  <MdBusiness size={12} />
+                  {contact.businessId.businessName}
+                </span>
+              )}
             </div>
           </div>
         </div>

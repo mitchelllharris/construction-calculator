@@ -146,6 +146,7 @@ require('./app/routes/profile.routes')(app);
 require('./app/routes/admin.routes')(app);
 require('./app/routes/contactform.routes')(app);
 require('./app/routes/contact.routes')(app);
+require('./app/routes/contactList.routes')(app);
 require('./app/routes/interaction.routes')(app);
 require('./app/routes/connection.routes')(app);
 require('./app/routes/follow.routes')(app);
