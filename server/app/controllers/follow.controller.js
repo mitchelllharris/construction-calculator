@@ -367,17 +367,65 @@ exports.getFollowStatus = async (req, res) => {
 exports.getPendingFollowRequests = async (req, res) => {
     try {
         const userId = req.userId;
+        
+        // Get active profile context
+        const { getActiveAccountContext } = require("../utils/permissions");
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+        
+        // Determine if we're on a business profile
+        let isBusinessProfile = false;
+        let activeBusinessId = null;
+        
+        if (activeAccountId) {
+            const user = await User.findById(userId).select('accountId');
+            if (user && user.accountId && Number(user.accountId) !== Number(activeAccountId)) {
+                // User is on a business profile
+                const business = await Business.findOne({ 
+                    ownerId: userId,
+                    accountId: activeAccountId 
+                }).select('_id');
+                
+                if (business) {
+                    isBusinessProfile = true;
+                    activeBusinessId = business._id;
+                }
+            }
+        }
+        
+        const followingId = isBusinessProfile ? activeBusinessId : userId;
+        const followingModel = isBusinessProfile ? 'Business' : 'User';
 
         const follows = await Follow.find({
-            following: userId,
+            following: followingId,
+            followingModel: followingModel,
             status: 'pending'
         })
-        .populate('follower', 'username firstName lastName avatar accountId')
+        .populate('follower', 'username firstName lastName avatar accountId email businessName businessSlug')
         .sort({ createdAt: -1 });
 
+        const requests = follows.map(f => {
+            const follower = f.follower;
+            const isBusiness = f.followerModel === 'Business';
+            return {
+                _id: f._id,
+                follower: {
+                    _id: follower._id,
+                    username: isBusiness ? (follower.businessSlug || follower._id) : follower.username,
+                    firstName: isBusiness ? null : follower.firstName,
+                    lastName: isBusiness ? null : follower.lastName,
+                    businessName: isBusiness ? follower.businessName : null,
+                    avatar: follower.avatar,
+                    accountId: follower.accountId,
+                    email: isBusiness ? null : follower.email,
+                    isBusiness: isBusiness
+                },
+                createdAt: f.createdAt
+            };
+        });
+
         return res.status(200).send({
-            requests: follows,
-            total: follows.length
+            requests: requests,
+            total: requests.length
         });
     } catch (error) {
         logger.error("Error getting pending follow requests:", error);
@@ -498,6 +546,73 @@ exports.getFollowing = async (req, res) => {
         });
     } catch (error) {
         logger.error("Error getting following list:", error);
+        return res.status(500).send({ message: "Internal server error" });
+    }
+};
+
+// Get list of followers
+exports.getFollowers = async (req, res) => {
+    try {
+        const userId = req.userId;
+        
+        // Get active profile context
+        const { getActiveAccountContext } = require("../utils/permissions");
+        const { activeAccountId, activePageId } = getActiveAccountContext(req);
+        
+        // Determine if we're on a business profile
+        let isBusinessProfile = false;
+        let activeBusinessId = null;
+        
+        if (activeAccountId) {
+            const user = await User.findById(userId).select('accountId');
+            if (user && user.accountId && Number(user.accountId) !== Number(activeAccountId)) {
+                // User is on a business profile
+                const business = await Business.findOne({ 
+                    ownerId: userId,
+                    accountId: activeAccountId 
+                }).select('_id');
+                
+                if (business) {
+                    isBusinessProfile = true;
+                    activeBusinessId = business._id;
+                }
+            }
+        }
+        
+        const followingId = isBusinessProfile ? activeBusinessId : userId;
+        const followingModel = isBusinessProfile ? 'Business' : 'User';
+
+        const follows = await Follow.find({
+            following: followingId,
+            followingModel: followingModel,
+            status: 'accepted'
+        })
+        .populate('follower', 'username firstName lastName avatar accountId email businessName businessSlug')
+        .sort({ createdAt: -1 });
+
+        const followers = follows.map(f => {
+            const follower = f.follower;
+            const isBusiness = f.followerModel === 'Business';
+            return {
+                _id: follower._id,
+                username: isBusiness ? (follower.businessSlug || follower._id) : follower.username,
+                firstName: isBusiness ? null : follower.firstName,
+                lastName: isBusiness ? null : follower.lastName,
+                businessName: isBusiness ? follower.businessName : null,
+                avatar: follower.avatar,
+                accountId: follower.accountId,
+                email: isBusiness ? null : follower.email,
+                isBusiness: isBusiness,
+                followedAt: f.createdAt
+            };
+        });
+
+        return res.status(200).send({
+            followers: followers,
+            total: followers.length
+        });
+    } catch (error) {
+        logger.error("Error getting followers list:", error);
         return res.status(500).send({ message: "Internal server error" });
     }
 };

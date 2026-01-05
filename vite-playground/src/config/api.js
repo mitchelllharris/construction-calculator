@@ -111,6 +111,7 @@ export const API_ENDPOINTS = {
     GET_FOLLOWERS_COUNT: (userId) => `${API_BASE_URL}/api/follow/${userId}/followers/count`,
     GET_FOLLOWING_COUNT: (userId) => `${API_BASE_URL}/api/follow/${userId}/following/count`,
     GET_FOLLOWING: `${API_BASE_URL}/api/follow/following`,
+    GET_FOLLOWERS: `${API_BASE_URL}/api/follow/followers`,
   },
   BUSINESSES: {
     CREATE: `${API_BASE_URL}/api/businesses`,

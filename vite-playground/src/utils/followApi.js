@@ -164,3 +164,29 @@ export const getPendingFollowRequests = async () => {
 
   return data;
 };
+
+/**
+ * Get list of followers
+ * @returns {Promise<Object>} Object with followers array and total count
+ */
+export const getFollowers = async () => {
+  const token = getToken();
+  if (!token) {
+    throw new Error('You must be logged in to get followers');
+  }
+
+  const response = await fetch(API_ENDPOINTS.FOLLOW.GET_FOLLOWERS, {
+    method: 'GET',
+    headers: {
+      'x-access-token': token,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to get followers');
+  }
+
+  return data;
+};

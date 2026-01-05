@@ -207,6 +207,66 @@ exports.sendConnectionRequest = async (req, res) => {
                         } catch (contactError) {
                             logger.error("Error creating contacts from auto-accept:", contactError);
                         }
+
+                        // Automatically create follow relationships for both parties
+                        try {
+                            const requesterId = existingConnection.requester;
+                            const recipientId = existingConnection.recipient;
+                            const requesterModel = existingConnection.requesterModel;
+                            const recipientModel = existingConnection.recipientModel;
+
+                            // Create follow: requester follows recipient
+                            let requesterFollowsRecipient = await Follow.findOne({
+                                follower: requesterId,
+                                following: recipientId,
+                                followerModel: requesterModel,
+                                followingModel: recipientModel
+                            });
+
+                            if (!requesterFollowsRecipient) {
+                                requesterFollowsRecipient = new Follow({
+                                    follower: requesterId,
+                                    followerModel: requesterModel,
+                                    following: recipientId,
+                                    followingModel: recipientModel,
+                                    status: 'accepted'
+                                });
+                                await requesterFollowsRecipient.save();
+                                logger.info(`[auto-accept] Created follow: requester ${requesterId} (${requesterModel}) follows recipient ${recipientId} (${recipientModel})`);
+                            } else if (requesterFollowsRecipient.status !== 'accepted') {
+                                requesterFollowsRecipient.status = 'accepted';
+                                requesterFollowsRecipient.updatedAt = new Date();
+                                await requesterFollowsRecipient.save();
+                                logger.info(`[auto-accept] Updated follow status to accepted: requester ${requesterId} (${requesterModel}) follows recipient ${recipientId} (${recipientModel})`);
+                            }
+
+                            // Create follow: recipient follows requester
+                            let recipientFollowsRequester = await Follow.findOne({
+                                follower: recipientId,
+                                following: requesterId,
+                                followerModel: recipientModel,
+                                followingModel: requesterModel
+                            });
+
+                            if (!recipientFollowsRequester) {
+                                recipientFollowsRequester = new Follow({
+                                    follower: recipientId,
+                                    followerModel: recipientModel,
+                                    following: requesterId,
+                                    followingModel: requesterModel,
+                                    status: 'accepted'
+                                });
+                                await recipientFollowsRequester.save();
+                                logger.info(`[auto-accept] Created follow: recipient ${recipientId} (${recipientModel}) follows requester ${requesterId} (${requesterModel})`);
+                            } else if (recipientFollowsRequester.status !== 'accepted') {
+                                recipientFollowsRequester.status = 'accepted';
+                                recipientFollowsRequester.updatedAt = new Date();
+                                await recipientFollowsRequester.save();
+                                logger.info(`[auto-accept] Updated follow status to accepted: recipient ${recipientId} (${recipientModel}) follows requester ${requesterId} (${requesterModel})`);
+                            }
+                        } catch (followError) {
+                            logger.error("[auto-accept] Error creating follow relationships:", followError);
+                        }
                     } // End of user-to-user contact creation
 
                     return res.status(200).send({
@@ -461,6 +521,67 @@ exports.acceptConnectionRequest = async (req, res) => {
                 error: contactError.message,
                 stack: contactError.stack
             });
+        }
+
+        // Automatically create follow relationships for both parties
+        try {
+            const requesterId = connection.requester;
+            const recipientId = connection.recipient;
+            const requesterModel = connection.requesterModel;
+            const recipientModel = connection.recipientModel;
+
+            // Create follow: requester follows recipient
+            let requesterFollowsRecipient = await Follow.findOne({
+                follower: requesterId,
+                following: recipientId,
+                followerModel: requesterModel,
+                followingModel: recipientModel
+            });
+
+            if (!requesterFollowsRecipient) {
+                requesterFollowsRecipient = new Follow({
+                    follower: requesterId,
+                    followerModel: requesterModel,
+                    following: recipientId,
+                    followingModel: recipientModel,
+                    status: 'accepted'
+                });
+                await requesterFollowsRecipient.save();
+                logger.info(`[acceptConnectionRequest] Created follow: requester ${requesterId} (${requesterModel}) follows recipient ${recipientId} (${recipientModel})`);
+            } else if (requesterFollowsRecipient.status !== 'accepted') {
+                requesterFollowsRecipient.status = 'accepted';
+                requesterFollowsRecipient.updatedAt = new Date();
+                await requesterFollowsRecipient.save();
+                logger.info(`[acceptConnectionRequest] Updated follow status to accepted: requester ${requesterId} (${requesterModel}) follows recipient ${recipientId} (${recipientModel})`);
+            }
+
+            // Create follow: recipient follows requester
+            let recipientFollowsRequester = await Follow.findOne({
+                follower: recipientId,
+                following: requesterId,
+                followerModel: recipientModel,
+                followingModel: requesterModel
+            });
+
+            if (!recipientFollowsRequester) {
+                recipientFollowsRequester = new Follow({
+                    follower: recipientId,
+                    followerModel: recipientModel,
+                    following: requesterId,
+                    followingModel: requesterModel,
+                    status: 'accepted'
+                });
+                await recipientFollowsRequester.save();
+                logger.info(`[acceptConnectionRequest] Created follow: recipient ${recipientId} (${recipientModel}) follows requester ${requesterId} (${requesterModel})`);
+            } else if (recipientFollowsRequester.status !== 'accepted') {
+                recipientFollowsRequester.status = 'accepted';
+                recipientFollowsRequester.updatedAt = new Date();
+                await recipientFollowsRequester.save();
+                logger.info(`[acceptConnectionRequest] Updated follow status to accepted: recipient ${recipientId} (${recipientModel}) follows requester ${requesterId} (${requesterModel})`);
+            }
+        } catch (followError) {
+            // Log error but don't fail the connection acceptance
+            logger.error("[acceptConnectionRequest] Error creating follow relationships from connection:", followError);
         }
 
         // Populate and return the updated connection

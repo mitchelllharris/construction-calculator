@@ -121,4 +121,11 @@ module.exports = function(app) {
         [authJwt.verifyToken],
         controller.getFollowing
     );
+
+    // Get list of followers
+    app.get(
+        "/api/follow/followers",
+        [authJwt.verifyToken],
+        controller.getFollowers
+    );
 };
